@@ -176,7 +176,7 @@ The rule: **a parameterized filter must return a callable.**
 ```julia
 upper(s)     = uppercase(s)
 excerpt(n)   = s -> length(s) <= n ? s : first(s, n) * "…"
-truncate_at(n) = Base.Fix1(first, n)
+truncate_at(n) = Base.Fix2(first, n)
 ```
 
 Autoescape: every `{{ }}` is emitted as `escape(expr)`. `escape` is idempotent on

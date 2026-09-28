@@ -9,10 +9,15 @@ module ScopeHost
     const HOSTCONST = 1
 end
 
+module HelperHost
+    using Ginger.DefaultHelpers
+end
+
 vars(str, mod) = G.context_vars(Meta.parseall(str), mod)
 
 @testset "scope: inference" begin
     @test vars("hostfn(HOSTCONST) + z", ScopeHost) == [:z]
+    @test vars("upper(name) |> trim", HelperHost) == [:name]
     @test vars("q = 1\nq + r", Main) == [:r]
     @test vars("for item in items\n    item\nend", Main) == [:items]
     @test vars("let a = b\n    a + c\nend", Main) == [:b, :c]

@@ -4,8 +4,9 @@ A Jinja-style template engine for Julia that compiles templates to Julia code
 during macro expansion. Rendering is ordinary, type-specialized Julia: no runtime
 parsing, no runtime compilation, and no modules generated at runtime.
 
-This repository currently implements **milestone M1** from `PLAN.md`: a
-single-file, end-to-end pipeline with the full Julia control-flow surface. See
+This repository currently implements **milestone M2** from `PLAN.md`: a
+single-file pipeline with the full Julia control-flow surface, inferred context,
+HTML escaping, and the `DefaultHelpers` filter library. See
 [Status](#status) for what is and is not in place.
 
 ## Example
@@ -60,6 +61,10 @@ Hello, {{ user }}!
   prologue binds context variables from the render context with the configured
   `undefined` mode (`:strict`, `:lenient`, or `:default`).
 - **Escaping**: `HTMLString`, `escape` (idempotent), `safe`, and `default`.
+- **Helpers and filters**: any function in the host module is callable from a
+template, and `Ginger.DefaultHelpers` provides `upper`, `lower`, `title`,
+`capitalize`, `trim`, `excerpt`, `truncate_at`, `replace_with`, `join_with`,
+`starts_with`, and `default_to`. Filters use ordinary Julia pipe semantics.
 - **Control flow**: `{% %}` statements contain arbitrary Julia, so `if` /
   `elseif` / `else`, `for`, `while`, `let`, `begin`, `try` / `catch` / `finally`,
   `function`, `do` blocks, and `quote` all work when closed with `{% end %}`.
@@ -77,12 +82,56 @@ Hello, {{ user }}!
 - **Macro**: `@template "path" [as NAME] [config = Config(...)]`, with
   `include_dependency` so template edits invalidate the host package.
 
+## Helpers and filters
+
+Any function defined or imported in the host module is callable from a template.
+The scope pass recognizes it as a host global, so no registry and no declaration
+are needed:
+
+```julia
+module MyApp
+
+using Ginger
+using Ginger.DefaultHelpers     # escape, safe, upper, lower, …
+include("filters.jl")           # slugify, excerpt, …
+
+@template "templates/page.html" as PAGE
+
+end
+```
+
+`Ginger.DefaultHelpers` provides these helpers:
+
+| Helper | Form |
+|--------|------|
+| `escape`, `safe` | one argument, idempotent |
+| `upper`, `lower`, `title`, `capitalize`, `trim` | one argument |
+| `excerpt(n)`, `truncate_at(n)` | parameterized, returns a callable |
+| `replace_with(from, to = "")` | parameterized |
+| `join_with(sep = "")` | parameterized |
+| `starts_with(prefix)` | parameterized |
+| `default_to(fallback)` | parameterized, for `undefined = :lenient` |
+
+Filters follow one rule: a one-argument function is used directly, and a filter
+that takes extra arguments returns a callable. This is plain Julia pipe
+semantics, so `Base.Fix1` and `Base.Fix2` work as filters too:
+
+```jinja
+{{ user.name |> upper }}
+{{ post.body |> excerpt(80) |> safe }}
+{{ title |> trim |> capitalize }}
+{{ path |> starts_with("/admin") }}
+```
+
+`escape` is idempotent on `HTMLString`, so `{{ x |> safe }}`, `{{ safe(x) }}`,
+and `{{ x |> escape }}` never double-escape. `safe` bypasses autoescaping;
+ordinary filters return plain `String`s and are escaped as usual.
+
 ## Status
 
-M1 covers single-file rendering and diagnostics. Not yet implemented (see
-`PLAN.md` §18):
+M2 covers single-file rendering, inferred context, escaping, and the standard
+helper library. Not yet implemented (see `PLAN.md` §18):
 
-- `DefaultHelpers`, curried-filter polish, and the full scope pass (M2);
 - `{% macro %}`, `{% include %}`, `{% import %}`, `{% from %}` (M3);
 - `{% extends %}`, `{% block %}`, `super()` (M4);
 - the provenance registry and structured `template_backtrace` (M5), including
