@@ -161,6 +161,10 @@ function _emit_statement!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token, 
 
     if leading == "macro"
         _emit_macro_opener!(buf, entries, tok, state)
+    elseif leading == "block"
+        _emit_block_opener!(buf, entries, tok, state)
+    elseif leading == "extends"
+        _emit_extends!(buf, entries, tok, state)
     elseif leading == "include"
         _emit_include!(buf, entries, tok)
     elseif leading == "import"
@@ -241,6 +245,28 @@ function _emit_macro_opener!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Toke
     name, params = sig
     push!(state.stack, _Frame(:macro, tok.pos, nothing, false))
     _emit_chunk!(buf, entries, string("__ginger_macro__(:", name, ", (", params, ") -> begin"), tok.pos)
+    return nothing
+end
+
+function _emit_block_opener!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token, state::_SynthState)
+    for frame in state.stack
+        frame.kind === :block || throw(
+            TemplateSyntaxError("`{% block %}` may not appear under control flow", tok.pos),
+        )
+    end
+    name = strip(_after_keyword(tok.text, "block"))
+    _valid_identifier(name) || throw(TemplateSyntaxError("invalid `{% block %}` name", tok.pos))
+    push!(state.stack, _Frame(:block, tok.pos, nothing, false))
+    _emit_chunk!(buf, entries, string("__ginger_block__(:", name, ") do"), tok.pos)
+    return nothing
+end
+
+function _emit_extends!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token, state::_SynthState)
+    isempty(state.stack) || throw(
+        TemplateSyntaxError("`{% extends %}` must appear at the top level", tok.pos),
+    )
+    rest = _after_keyword(tok.text, "extends")
+    _emit_chunk!(buf, entries, string("__ginger_extends__(", rest, ')'), tok.pos)
     return nothing
 end
 

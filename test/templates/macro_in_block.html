@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% macro hi(n) %}<b>{{ n }}</b>{% endmacro %}
+{% block content %}{{ hi("Bo") }}{% endblock %}

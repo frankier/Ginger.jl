@@ -400,11 +400,15 @@ Because `blocks` always has a concrete `NamedTuple` type at the call site, the
   ```julia
   @noinline function __ginger_body_index__(out, ctx, blocks)
       return __ginger_body_base__(out, ctx,
-          merge(blocks, __ginger_blocks_index__))
+          merge(__ginger_blocks_index__, blocks))
   end
   ```
 
-  Incoming `blocks` (from a more-derived template) win over the template's own.
+  Incoming `blocks` (from a more-derived template) win over the template's own,
+  which is why the template's own blocks are the *first* argument to `merge`.
+  The base body does not merge its own blocks; it passes each block function as
+  the `default` argument of `render_block`, so a block with no override runs the
+  definition from the template that declared it.
 - A leaf that extends `index` passes its own `blocks` through `index`, so the
   chain is built by `merge` of compile-time-constant `NamedTuple`s, which Julia
   folds.

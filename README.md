@@ -4,11 +4,12 @@ A Jinja-style template engine for Julia that compiles templates to Julia code
 during macro expansion. Rendering is ordinary, type-specialized Julia: no runtime
 parsing, no runtime compilation, and no modules generated at runtime.
 
-This repository currently implements **milestone M3** from `PLAN.md`: a
+This repository currently implements **milestone M4** from `PLAN.md`: a
 single-file pipeline with the full Julia control-flow surface, inferred context,
-HTML escaping, the `DefaultHelpers` filter library, and template composition
-through `{% macro %}`, `{% include %}`, `{% import %}`, and `{% from %}`. See
-[Status](#status) for what is and is not in place.
+HTML escaping, the `DefaultHelpers` filter library, template composition through
+`{% macro %}`, `{% include %}`, `{% import %}`, and `{% from %}`, and static
+template inheritance through `{% extends %}`, `{% block %}`, and `super()` /
+`super(n)`. See [Status](#status) for what is and is not in place.
 
 ## Example
 
@@ -81,6 +82,12 @@ template, and `Ginger.DefaultHelpers` provides `upper`, `lower`, `title`,
   referencing template, compiled into the same expansion, and resolved at
   macro-expansion time; a missing reference or a reference cycle is a
   `TemplateSyntaxError`.
+- **Inheritance**: `{% extends "base.html" %}` composes a base template with the
+  child's `{% block name %}…{% endblock %}` overrides. Composition is static: a
+  block is a generated function, dispatch is a `NamedTuple` lookup that
+  constant-folds, and `super()` / `super(n)` resolve at compile time to the
+  nearest ancestor definitions. Nested blocks and multi-level inheritance work,
+  and a child's macros and imports are visible inside its blocks.
 - **Raw**: `{% raw %}…{% endraw %}` emits its body verbatim; delimiters inside
   it are never interpreted. Explicit `-` markers on the two tags trim the body
   edges, and the `trim_blocks`/`lstrip_blocks` config never touches raw text.
@@ -179,13 +186,47 @@ Every reference is resolved relative to the referencing template and compiled
 into the same expansion, so a shared template is compiled once per `@template`
 expansion even when several templates in that expansion reference it.
 
+## Inheritance
+
+`{% extends %}` composes templates. The child overrides named `{% block %}`
+regions of its base; non-whitespace output outside a block is a compile-time
+error:
+
+```jinja
+{# base.html #}
+<html><body>{% block content %}nothing yet{% endblock %}</body></html>
+
+{# index.html #}
+{% extends "base.html" %}
+{% block content %}<h1>{{ user }}</h1>{% endblock %}
+```
+
+A block that a child does not override falls back to the base's default.
+`super()` renders the nearest ancestor's version of the block, and `super(n)`
+the version `n` levels up:
+
+```jinja
+{% extends "base.html" %}
+{% block content %}<main>{{ super() }}</main>{% endblock %}
+```
+
+Composition is entirely static. Each template compiles to a body function and
+one function per block; a child body passes its blocks to its parent with
+`merge`, and a block site dispatches through the resulting concrete `NamedTuple`,
+which constant-folds. `super()` is a direct call on a compile-time-known
+function, so there is no runtime block registry and no `super` object.
+
+Restrictions are checked at macro-expansion time: `{% extends %}` must appear
+once at the top level, `{% block %}` may not appear under control flow, block
+and macro names must be unique within a template, and an extending template may
+not emit text outside a block (whitespace between tags is ignored).
+
 ## Status
 
-M3 covers single-file rendering, inferred context, escaping, the standard helper
-library, and template composition through macros, includes, and imports. Not yet
-implemented (see `PLAN.md` §18):
+M4 covers single-file rendering, inferred context, escaping, the standard helper
+library, template composition through macros, includes, and imports, and static
+template inheritance. Not yet implemented (see `PLAN.md` §18):
 
-- `{% extends %}`, `{% block %}`, `super()` (M4);
 - the provenance registry and structured `template_backtrace` (M5), including
   caret diagnostics that render the offending template line;
 - `@templates` directory discovery and the precompile probe (M6).

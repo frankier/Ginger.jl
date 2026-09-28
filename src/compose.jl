@@ -15,9 +15,11 @@ end
     CompiledTemplate
 
 A template that has been synthesized, parsed, and normalized. `body_sym` is the
-generated body function `body(out, ctx)`; `enter_sym` is the entry function
-`enter(out; kwargs...)`; `namespace_sym` is a `const` binding a `NamedTuple` of
-the template's macros for `{% import %}` / `{% from %}`.
+generated body function `body(out, ctx, blocks)`; `enter_sym` is the entry
+function `enter(out; kwargs...)`; `namespace_sym` is a `const` binding a
+`NamedTuple` of the template's macros for `{% import %}` / `{% from %}`.
+`blocks` maps each `{% block %}` name to its generated default function, and
+`parent` is the compiled `{% extends %}` target (or `nothing`).
 """
 struct CompiledTemplate
     virtual_path::String
@@ -25,6 +27,8 @@ struct CompiledTemplate
     enter_sym::Symbol
     namespace_sym::Symbol
     macros::Vector{Symbol}
+    blocks::Dict{Symbol, Symbol}
+    parent::Union{Nothing, CompiledTemplate}
 end
 
 """
@@ -85,9 +89,9 @@ _template_id(unit::CompilationUnit, virtual_path::AbstractString) =
     compile_template!(unit, virtual_path, abs_path) -> CompiledTemplate
 
 Compile one template into `unit`, recursively compiling every template it
-references with `{% include %}`, `{% import %}`, or `{% from %}`. Results are
-memoized by virtual path, so a template included from several places is compiled
-once. A reference cycle is a `TemplateSyntaxError`.
+references with `{% include %}`, `{% extends %}`, `{% import %}`, or
+`{% from %}`. Results are memoized by virtual path, so a template included from
+several places is compiled once. A reference cycle is a `TemplateSyntaxError`.
 """
 function compile_template!(unit::CompilationUnit, virtual_path::AbstractString, abs_path::AbstractString)
     virtual_path = String(normpath(virtual_path))
@@ -105,30 +109,33 @@ function compile_template!(unit::CompilationUnit, virtual_path::AbstractString, 
     normalized = normalize(parsed, syn, virtual_path, unit.cfg, unit, abs_path)
     macros = normalized.macros
     _check_duplicate_macros(macros)
+    _check_duplicate_blocks(normalized.blocks)
 
     id = _template_id(unit, virtual_path)
     macro_names = Symbol[m.name for m in macros]
-    macro_syms = Pair{Symbol, Symbol}[m.name => m.sym for m in macros]
+    bindings = Pair{Symbol, Any}[m.name => GlobalRef(unit.mod, m.sym) for m in macros]
+    append!(bindings, normalized.imports)
+    binding_names = Set{Symbol}(first.(bindings))
+
     body_sym = Symbol("__ginger_body_", id, "__")
     enter_sym = Symbol("__ginger_enter_", id, "__")
     namespace_sym = Symbol("__ginger_macros_", id, "__")
+    blocks_sym = Symbol("__ginger_blocks_", id, "__")
 
-    macro_defs = Any[_macro_function(m, macro_syms, unit, virtual_path) for m in macros]
+    macro_defs = Any[_macro_function(m, bindings, unit, virtual_path) for m in macros]
     namespace_def = Expr(:const, Expr(:(=), namespace_sym, Expr(:tuple, (Expr(:(=), m.name, m.sym) for m in macros)...)))
-
-    stmts = normalized.stmts
-    bound = Set{Symbol}(macro_names)
-    vars = context_vars(_toplevel(stmts), unit.mod, bound)
-    prologue = Any[Expr(:(=), name, sym) for (name, sym) in macro_syms]
-    append!(prologue, (Expr(:(=), var, _fetchvar_expr(var, virtual_path, unit.cfg.undefined)) for var in vars))
-
-    body_def = _body_function(body_sym, prologue, stmts, virtual_path)
+    block_defs = Any[_block_function(b, bindings, unit, virtual_path) for b in normalized.blocks]
+    blocks_def = Expr(:const, Expr(:(=), blocks_sym, _blocks_tuple(normalized.blocks, unit.mod)))
+    body_def = _body_function(body_sym, blocks_sym, normalized, bindings, binding_names, unit, virtual_path)
     enter_def = _enter_function(enter_sym, body_sym, virtual_path)
 
     append!(unit.defs, macro_defs)
-    push!(unit.defs, namespace_def, body_def, enter_def)
+    append!(unit.defs, block_defs)
+    push!(unit.defs, namespace_def, blocks_def)
+    push!(unit.defs, body_def, enter_def)
 
-    compiled = CompiledTemplate(virtual_path, body_sym, enter_sym, namespace_sym, macro_names)
+    block_map = Dict{Symbol, Symbol}(b.name => b.sym for b in normalized.blocks)
+    compiled = CompiledTemplate(virtual_path, body_sym, enter_sym, namespace_sym, macro_names, block_map, normalized.parent)
     unit.compiled[virtual_path] = compiled
     delete!(unit.in_progress, virtual_path)
     return compiled
@@ -149,18 +156,55 @@ end
 
 # --- generated function shapes ----------------------------------------------
 
-function _body_function(sym::Symbol, prologue::Vector{Any}, stmts, virtual_path::String)
+function _body_function(body_sym::Symbol, blocks_sym::Symbol, normalized, bindings, binding_names, unit::CompilationUnit, virtual_path::String)
     lnn = LineNumberNode(1, Symbol(virtual_path))
-    block = Expr(:block, lnn, prologue..., stmts...)
-    fn = Expr(:function, Expr(:call, sym, :out, :ctx), block)
+    if normalized.parent !== nothing
+        # A child body contributes its blocks and delegates to its parent. The
+        # incoming blocks (from a more-derived template) win over the child's own,
+        # so `merge(own, incoming)` is the correct order.
+        merged = Expr(
+            :(=), :blocks,
+            Expr(:call, GlobalRef(Base, :merge), GlobalRef(unit.mod, blocks_sym), :blocks),
+        )
+        call = Expr(:call, GlobalRef(unit.mod, normalized.parent.body_sym), :out, :ctx, :blocks)
+        block = Expr(:block, lnn, merged, Expr(:return, call))
+    else
+        vars = context_vars(_toplevel(normalized.stmts), unit.mod, binding_names)
+        prologue = _prologue(bindings, vars, virtual_path, unit.cfg.undefined)
+        block = Expr(:block, lnn, prologue..., normalized.stmts...)
+    end
+    fn = Expr(:function, Expr(:call, body_sym, :out, :ctx, :blocks), block)
     return Expr(:macrocall, Symbol("@noinline"), lnn, fn)
+end
+
+function _blocks_tuple(blocks, mod::Module)
+    isempty(blocks) && return Expr(:call, GlobalRef(Base, :NamedTuple))
+    return Expr(:tuple, (Expr(:(=), b.name, GlobalRef(mod, b.sym)) for b in blocks)...)
+end
+
+# A block body is a module-level function taking the same `(out, ctx, blocks)`
+# arguments as a body function, so `super()` and nested blocks dispatch uniformly.
+function _block_function(b, bindings, unit::CompilationUnit, virtual_path::String)
+    vars = context_vars(b.body, unit.mod, Set{Symbol}(first.(bindings)))
+    prologue = _prologue(bindings, vars, virtual_path, unit.cfg.undefined)
+    lnn = LineNumberNode(1, Symbol(virtual_path))
+    block = Expr(:block, lnn, prologue..., b.body)
+    fn = Expr(:function, Expr(:call, b.sym, :out, :ctx, :blocks), block)
+    return Expr(:macrocall, Symbol("@noinline"), lnn, fn)
+end
+
+function _prologue(bindings, vars, virtual_path::String, undefined::Symbol)
+    prologue = Any[Expr(:(=), name, value) for (name, value) in bindings]
+    append!(prologue, (Expr(:(=), var, _fetchvar_expr(var, virtual_path, undefined)) for var in vars))
+    return prologue
 end
 
 function _enter_function(sym::Symbol, body_sym::Symbol, virtual_path::String)
     lnn = LineNumberNode(1, Symbol(virtual_path))
     sig = Expr(:call, sym, Expr(:parameters, Expr(:..., :kwargs)), :out)
     args = Expr(:call, GlobalRef(Base, :NamedTuple), :kwargs)
-    ret = Expr(:return, Expr(:call, body_sym, :out, args))
+    fresh = Expr(:call, GlobalRef(Base, :NamedTuple))
+    ret = Expr(:return, Expr(:call, body_sym, :out, args, fresh))
     return Expr(:function, sig, Expr(:block, lnn, ret))
 end
 
@@ -171,10 +215,10 @@ Build the module-level function for one macro. A macro body sees its arguments,
 the template's other macros, and host-module globals; it does **not** see the
 caller's context. A free variable that is none of those is a compile-time error.
 """
-function _macro_function(m::MacroInfo, macro_syms::Vector{Pair{Symbol, Symbol}}, unit::CompilationUnit, virtual_path::String)
+function _macro_function(m::MacroInfo, bindings, unit::CompilationUnit, virtual_path::String)
     params = _lambda_params(m.lambda.args[1])
     body = m.lambda.args[2]
-    bound = union(Set{Symbol}(first.(macro_syms)), _params(params))
+    bound = union(Set{Symbol}(first.(bindings)), _params(params))
     vars = context_vars(body, unit.mod, bound)
     if !isempty(vars)
         throw(
@@ -191,7 +235,7 @@ function _macro_function(m::MacroInfo, macro_syms::Vector{Pair{Symbol, Symbol}},
         Expr(:(=), :out, Expr(:call, GlobalRef(Base, :IOBuffer))),
         Expr(:(=), :ctx, Expr(:call, GlobalRef(Base, :NamedTuple))),
     ]
-    append!(prologue, (Expr(:(=), name, sym) for (name, sym) in macro_syms))
+    append!(prologue, (Expr(:(=), name, value) for (name, value) in bindings))
     bodyargs = body isa Expr && body.head === :block ? body.args : Any[body]
     ret = Expr(
         :return,

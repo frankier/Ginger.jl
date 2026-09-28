@@ -75,6 +75,23 @@ end
     @test occursin("__ginger_fromimport__(\"x.html\", (a = :a, c = :b,))", syn.source)
 end
 
+@testset "synthesize: inheritance tags" begin
+    syn = G.synthesize("{% block content %}x{% endblock %}", "t.html", Config())
+    @test occursin("__ginger_block__(:content) do", syn.source)
+
+    syn = G.synthesize("{% extends \"base.html\" %}", "t.html", Config())
+    @test occursin("__ginger_extends__(\"base.html\")", syn.source)
+
+    @test_throws G.TemplateSyntaxError G.synthesize(
+        "{% if x %}{% block b %}y{% endblock %}{% endif %}", "t.html", Config(),
+    )
+    @test_throws G.TemplateSyntaxError G.synthesize("{% block %}x{% endblock %}", "t.html", Config())
+    @test_throws G.TemplateSyntaxError G.synthesize(
+        "{% for x in xs %}{% extends \"b\" %}{% endfor %}", "t.html", Config(),
+    )
+    @test_throws G.TemplateSyntaxError G.synthesize("{% block b %}x", "t.html", Config())
+end
+
 @testset "synthesize: macro restrictions" begin
     @test_throws G.TemplateSyntaxError G.synthesize("{% macro f() %}x", "t.html", Config())
     @test_throws G.TemplateSyntaxError G.synthesize(

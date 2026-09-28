@@ -4,7 +4,7 @@ const _COMPOUND_ASSIGN_OPS = Set{Symbol}(
     ]
 )
 
-const _RESERVED_BINDINGS = Set{Symbol}([:out, :ctx])
+const _RESERVED_BINDINGS = Set{Symbol}([:out, :ctx, :blocks])
 
 """
     context_vars(body, mod) -> Vector{Symbol}

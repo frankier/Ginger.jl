@@ -91,6 +91,41 @@ end
 end
 
 """
+    __ginger_render_block__(blocks, name, default, out, ctx)
+
+Dispatch a `{% block %}`: call the override installed in `blocks`, or `default`
+when no template in the chain overrides the block. `blocks` always has a
+concrete `NamedTuple` type at the call site, so `hasproperty` constant-folds and
+the call devirtualizes.
+"""
+@inline function __ginger_render_block__(blocks, name::Symbol, default, out, ctx)
+    return hasproperty(blocks, name) ? getproperty(blocks, name)(out, ctx, blocks) :
+        default(out, ctx, blocks)
+end
+
+"""
+    __ginger_render_super__(block, ctx, blocks)
+
+Render an ancestor block into a fresh buffer and return it as an `HTMLString`.
+`super()` appears inside `{{ }}`, so it must produce a value rather than write to
+the caller's output stream. The result is already escaped by the block body, and
+`escape` is idempotent on `HTMLString`.
+"""
+@inline function __ginger_render_super__(block, ctx, blocks)
+    buf = IOBuffer()
+    block(buf, ctx, blocks)
+    return HTMLString(String(take!(buf)))
+end
+
+"""
+    __ginger_empty_block__(out, ctx, blocks)
+
+Fallback for `super(n)` when fewer than `n` ancestors define the block. Renders
+nothing.
+"""
+__ginger_empty_block__(out, ctx, blocks) = HTMLString("")
+
+"""
     Template
 
 A compiled template. `path` is the package-relative virtual path; `entry` is the
