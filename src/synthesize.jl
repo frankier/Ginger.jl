@@ -46,7 +46,7 @@ const _STRUCT_KEYWORDS = Set{String}(
 const _STRUCT_OPENERS = Set{String}(
     [
         "if", "for", "while", "let", "begin", "try", "function", "quote",
-        "struct", "module", "baremodule", "macro", "abstract", "primitive",
+        "struct", "module", "baremodule", "abstract", "primitive",
     ]
 )
 
@@ -159,7 +159,15 @@ function _emit_statement!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token, 
     leading = _leading_keyword(text)
     keywords = _top_level_keywords(text)
 
-    if leading !== nothing && leading in _END_ALIASES && length(keywords) == 1
+    if leading == "macro"
+        _emit_macro_opener!(buf, entries, tok, state)
+    elseif leading == "include"
+        _emit_include!(buf, entries, tok)
+    elseif leading == "import"
+        _emit_import!(buf, entries, tok)
+    elseif leading == "from"
+        _emit_fromimport!(buf, entries, tok)
+    elseif leading !== nothing && leading in _END_ALIASES && length(keywords) == 1
         _emit_closer!(buf, entries, tok.pos, state)
     elseif leading !== nothing && leading in _STRUCT_CONTINUATIONS
         _emit_continuation!(buf, entries, tok, leading, keywords, state)
@@ -185,6 +193,9 @@ function _emit_closer!(buf::IOBuffer, entries::Vector{MapEntry}, pos::Pos, state
         # Close the `for` (or the `else` `if`), then close the `let`.
         _emit_chunk!(buf, entries, "end", pos)
         _emit_chunk!(buf, entries, "end", pos)
+    elseif frame.kind === :macro
+        # Close the lambda body opened by `{% macro %}`.
+        _emit_chunk!(buf, entries, "end)", pos)
     else
         _emit_chunk!(buf, entries, "end", pos)
     end
@@ -217,6 +228,172 @@ function _emit_opener!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token, kin
         _emit_chunk!(buf, entries, tok.text, tok.pos)
     end
     return nothing
+end
+
+# --- template-only tags -----------------------------------------------------
+
+function _emit_macro_opener!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token, state::_SynthState)
+    isempty(state.stack) || throw(
+        TemplateSyntaxError("`{% macro %}` must appear at the top level", tok.pos),
+    )
+    sig = _macro_signature(_after_keyword(tok.text, "macro"))
+    sig === nothing && throw(TemplateSyntaxError("invalid `{% macro %}` tag", tok.pos))
+    name, params = sig
+    push!(state.stack, _Frame(:macro, tok.pos, nothing, false))
+    _emit_chunk!(buf, entries, string("__ginger_macro__(:", name, ", (", params, ") -> begin"), tok.pos)
+    return nothing
+end
+
+function _emit_include!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token)
+    rest = _after_keyword(tok.text, "include")
+    split = _split_top_level(rest, "with")
+    chunk = if split === nothing
+        string("__ginger_include__(", strip(rest), ')')
+    else
+        left, right = split
+        string("__ginger_include__(", strip(left), "; ", strip(right), ')')
+    end
+    _emit_chunk!(buf, entries, chunk, tok.pos)
+    return nothing
+end
+
+function _emit_import!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token)
+    rest = _after_keyword(tok.text, "import")
+    split = _split_top_level(rest, "as")
+    split === nothing && throw(
+        TemplateSyntaxError("invalid `{% import %}` tag: expected `as`", tok.pos),
+    )
+    path, alias = strip(split[1]), strip(split[2])
+    _valid_identifier(alias) || throw(TemplateSyntaxError("invalid `{% import %}` alias", tok.pos))
+    _emit_chunk!(buf, entries, string("__ginger_import__(:", alias, ", ", path, ')'), tok.pos)
+    return nothing
+end
+
+function _emit_fromimport!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token)
+    rest = _after_keyword(tok.text, "from")
+    split = _split_top_level(rest, "import")
+    split === nothing && throw(
+        TemplateSyntaxError("invalid `{% from %}` tag: expected `import`", tok.pos),
+    )
+    path, names = strip(split[1]), split[2]
+    pairs = String[]
+    for item in _split_top_level_commas(names)
+        item = strip(item)
+        isempty(item) && continue
+        as = _split_top_level(item, "as")
+        local_name, remote = as === nothing ? (item, item) : (strip(as[2]), strip(as[1]))
+        (_valid_identifier(local_name) && _valid_identifier(remote)) || throw(
+            TemplateSyntaxError("invalid `{% from %}` import name", tok.pos),
+        )
+        push!(pairs, string(local_name, " = :", remote))
+    end
+    isempty(pairs) && throw(TemplateSyntaxError("`{% from %}` imports no names", tok.pos))
+    chunk = string("__ginger_fromimport__(", path, ", (", join(pairs, ", "), ",))")
+    _emit_chunk!(buf, entries, chunk, tok.pos)
+    return nothing
+end
+
+function _after_keyword(text::AbstractString, kw::AbstractString)
+    s = String(text)
+    return strip(SubString(s, nextind(s, firstindex(s), ncodeunits(kw))))
+end
+
+_valid_identifier(s::AbstractString) = occursin(r"^[A-Za-z_][A-Za-z0-9_]*$", s)
+
+# `name`, `name(params)`, or `name()`. Returns `(name, params)` with `params`
+# empty for the first form, or `nothing` when the signature is malformed.
+function _macro_signature(rest::AbstractString)
+    s = strip(rest)
+    isempty(s) && return nothing
+    open = findfirst('(', s)
+    open === nothing && return _valid_identifier(s) ? (String(s), "") : nothing
+    open == firstindex(s) && return nothing
+    name = strip(SubString(s, firstindex(s), prevind(s, open)))
+    _valid_identifier(name) || return nothing
+    close = findlast(')', s)
+    (close === nothing || close < open) && return nothing
+    params = strip(SubString(s, nextind(s, open), prevind(s, close)))
+    return String(name), String(params)
+end
+
+# Find `word` at the top level (outside strings, brackets, and comments) and
+# split around it. Returns `(left, right)` or `nothing`.
+function _split_top_level(s::AbstractString, word::AbstractString)
+    s = String(s)
+    n = ncodeunits(s)
+    depth = 0
+    j = firstindex(s)
+    while j <= n
+        c = s[j]
+        if c == '"'
+            j = _skip_string(s, j)
+        elseif c == '\''
+            j = _skip_char_or_adjoint(s, j)
+        elseif c == '`'
+            j = _skip_backtick(s, j)
+        elseif c == '#'
+            j = _skip_comment(s, j)
+        elseif c == '(' || c == '[' || c == '{'
+            depth += 1
+            j = nextind(s, j)
+        elseif c == ')' || c == ']' || c == '}'
+            depth = max(depth - 1, 0)
+            j = nextind(s, j)
+        elseif depth == 0 && (isletter(c) || c == '_')
+            k = j
+            while k <= n && (isletter(s[k]) || isdigit(s[k]) || s[k] == '_')
+                k = nextind(s, k)
+            end
+            if String(SubString(s, j, prevind(s, k))) == word
+                before_ok = j == firstindex(s) || isspace(s[prevind(s, j)])
+                after_ok = k > n || isspace(s[k])
+                if before_ok && after_ok
+                    left = String(SubString(s, firstindex(s), prevind(s, j)))
+                    right = k > n ? "" : String(SubString(s, k, lastindex(s)))
+                    return left, right
+                end
+            end
+            j = k
+        else
+            j = nextind(s, j)
+        end
+    end
+    return nothing
+end
+
+function _split_top_level_commas(s::AbstractString)
+    s = String(s)
+    n = ncodeunits(s)
+    parts = String[]
+    depth = 0
+    start = firstindex(s)
+    j = firstindex(s)
+    while j <= n
+        c = s[j]
+        if c == '"'
+            j = _skip_string(s, j)
+        elseif c == '\''
+            j = _skip_char_or_adjoint(s, j)
+        elseif c == '`'
+            j = _skip_backtick(s, j)
+        elseif c == '#'
+            j = _skip_comment(s, j)
+        elseif c == '(' || c == '[' || c == '{'
+            depth += 1
+            j = nextind(s, j)
+        elseif c == ')' || c == ']' || c == '}'
+            depth = max(depth - 1, 0)
+            j = nextind(s, j)
+        elseif c == ',' && depth == 0
+            push!(parts, j == start ? "" : String(SubString(s, start, prevind(s, j))))
+            j = nextind(s, j)
+            start = j
+        else
+            j = nextind(s, j)
+        end
+    end
+    start <= n && push!(parts, String(SubString(s, start)))
+    return parts
 end
 
 """

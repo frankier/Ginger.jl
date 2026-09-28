@@ -6,8 +6,10 @@ macro expansion. Rendering is plain, type-specialized Julia: there is no runtime
 parsing, no runtime compilation, and no generated modules at runtime.
 
 See `PLAN.md` for the full design. The current implementation covers milestone
-M2: single-file rendering with the full Julia control-flow surface, inferred
-context, HTML escaping, and the `DefaultHelpers` filter library.
+M3: single-file rendering with the full Julia control-flow surface, inferred
+context, HTML escaping, the `DefaultHelpers` filter library, and template
+composition through `{% macro %}`, `{% include %}`, `{% import %}`, and
+`{% from %}`.
 """
 module Ginger
 
@@ -21,6 +23,7 @@ include("lexer.jl")
 include("synthesize.jl")
 include("parse.jl")
 include("scope.jl")
+include("compose.jl")
 include("normalize.jl")
 include("macros.jl")
 include("api.jl")

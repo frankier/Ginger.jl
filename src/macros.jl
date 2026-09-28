@@ -22,9 +22,8 @@ macro template(args...)
     cfg isa Config || throw(ArgumentError("@template config must evaluate to a Config"))
     abs_path = _resolve_template_path(path_arg, __source__)
     isfile(abs_path) || throw(ArgumentError("template not found: $abs_path"))
-    Base.include_dependency(abs_path)
     const_name = name === nothing ? _default_name(path_arg) : name
-    return esc(_compile_template(path_arg, abs_path, const_name, mod, cfg))
+    return esc(_compile_template(path_arg, abs_path, const_name, mod, cfg, __source__))
 end
 
 function _parse_template_args(args)
@@ -63,62 +62,18 @@ function _resolve_template_path(path::AbstractString, source::LineNumberNode)
     return normpath(joinpath(base, path))
 end
 
-function _compile_template(virtual_path::AbstractString, abs_path::AbstractString, name::Symbol, mod::Module, cfg::Config)
-    src = read(abs_path, String)
-    syn = synthesize(src, virtual_path, cfg)
-    parsed = parse_source(syn, virtual_path)
-    normalized = normalize(parsed, syn, mod, virtual_path, cfg)
-    return _build_expansion(name, String(virtual_path), normalized.stmts, normalized.vars, cfg)
-end
-
-# A stable identifier for a virtual path, used to name generated functions. FNV-1a
-# keeps generated names reproducible across Julia versions and processes.
-function _stable_id(path::AbstractString)
-    h = UInt64(0xcbf29ce484222325)
-    for byte in codeunits(path)
-        h ⊻= byte
-        h *= 0x00000100000001b3
-    end
-    return string(h; base = 16)
-end
-
-function _config_signature(cfg::Config)
-    return string(
-        cfg.expression_start, cfg.expression_end,
-        cfg.statement_start, cfg.statement_end,
-        cfg.comment_start, cfg.comment_end,
-        cfg.trim_blocks, cfg.lstrip_blocks, cfg.autoescape,
-        cfg.source_root, cfg.undefined,
-    )
-end
-
-function _build_expansion(name::Symbol, virtual_path::String, stmts, vars, cfg::Config)
-    id = _stable_id(_config_signature(cfg) * "\0" * virtual_path)
-    body_sym = Symbol("__ginger_body_", id, "__")
-    enter_sym = Symbol("__ginger_enter_", id, "__")
-    file_sym = Symbol(virtual_path)
-    lnn = LineNumberNode(1, file_sym)
-
-    prologue = Any[
-        Expr(:(=), var, _fetchvar_expr(var, virtual_path, cfg.undefined)) for var in vars
-    ]
-    body_block = Expr(:block, lnn, prologue..., stmts...)
-    body_fn = Expr(:function, Expr(:call, body_sym, :out, :ctx), body_block)
-    body_fn = Expr(:macrocall, Symbol("@noinline"), lnn, body_fn)
-
-    enter_sig = Expr(:call, enter_sym, Expr(:parameters, Expr(:..., :kwargs)), :out)
-    enter_ret = Expr(:return, Expr(:call, body_sym, :out, Expr(:call, GlobalRef(Base, :NamedTuple), :kwargs)))
-    enter_fn = Expr(:function, enter_sig, Expr(:block, lnn, enter_ret))
-
+function _compile_template(virtual_path::AbstractString, abs_path::AbstractString, name::Symbol, mod::Module, cfg::Config, source::LineNumberNode)
+    unit = CompilationUnit(mod, cfg, _unit_id(cfg, virtual_path, source))
+    root = compile_template!(unit, String(virtual_path), String(abs_path))
     const_def = Expr(
         :const,
         Expr(
             :(=),
             name,
-            Expr(:call, GlobalRef(Ginger, :Template), virtual_path, enter_sym),
+            Expr(:call, GlobalRef(Ginger, :Template), root.virtual_path, root.enter_sym),
         ),
     )
-    return Expr(:block, body_fn, enter_fn, const_def)
+    return Expr(:block, unit.defs..., const_def)
 end
 
 function _fetchvar_expr(var::Symbol, virtual_path::String, undefined::Symbol)

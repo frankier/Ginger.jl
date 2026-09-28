@@ -1,0 +1,3 @@
+{% macro greet(name) %}<b>{{ name }}</b>{% endmacro %}
+{% macro input(name, value = "", type = "text") %}<input type="{{ type }}" name="{{ name }}" value="{{ value }}">{% endmacro %}
+{% macro duo(a, b) %}{{ greet(a) }}{{ greet(b) }}{% endmacro %}

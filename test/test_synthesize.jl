@@ -54,6 +54,35 @@ end
     @test !occursin("__ginger_print__", syn.source)
 end
 
+@testset "synthesize: template-only tags" begin
+    syn = G.synthesize("{% macro f(a, b = 1) %}x{% endmacro %}", "t.html", Config())
+    @test occursin("__ginger_macro__(:f, (a, b = 1) -> begin", syn.source)
+    @test occursin("end)", syn.source)
+
+    syn = G.synthesize("{% macro g() %}x{% endmacro %}", "t.html", Config())
+    @test occursin("__ginger_macro__(:g, () -> begin", syn.source)
+
+    syn = G.synthesize("{% include \"x.html\" %}", "t.html", Config())
+    @test occursin("__ginger_include__(\"x.html\")", syn.source)
+
+    syn = G.synthesize("{% include \"x.html\" with a=1 %}", "t.html", Config())
+    @test occursin("__ginger_include__(\"x.html\"; a=1)", syn.source)
+
+    syn = G.synthesize("{% import \"x.html\" as m %}", "t.html", Config())
+    @test occursin("__ginger_import__(:m, \"x.html\")", syn.source)
+
+    syn = G.synthesize("{% from \"x.html\" import a, b as c %}", "t.html", Config())
+    @test occursin("__ginger_fromimport__(\"x.html\", (a = :a, c = :b,))", syn.source)
+end
+
+@testset "synthesize: macro restrictions" begin
+    @test_throws G.TemplateSyntaxError G.synthesize("{% macro f() %}x", "t.html", Config())
+    @test_throws G.TemplateSyntaxError G.synthesize(
+        "{% if true %}{% macro f() %}x{% endmacro %}{% endif %}", "t.html", Config(),
+    )
+    @test_throws G.TemplateSyntaxError G.synthesize("{% import \"x\" %}", "t.html", Config())
+end
+
 @testset "synthesize: structural restrictions" begin
     @test_throws G.TemplateSyntaxError G.synthesize("{% for x in xs %}hi", "t.html", Config())
     @test_throws G.TemplateSyntaxError G.synthesize("{% if x %}hi", "t.html", Config())

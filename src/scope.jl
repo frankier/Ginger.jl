@@ -14,10 +14,10 @@ variable when it is neither bound locally in `body` nor resolvable in the host
 module `mod` (checked with `isdefined`). The result is sorted for deterministic
 generated code.
 """
-function context_vars(body, mod::Module)
+function context_vars(body, mod::Module, extra::Set{Symbol} = Set{Symbol}())
     assigned = Set{Symbol}()
     _assigned!(assigned, body)
-    bound = union(assigned, _RESERVED_BINDINGS)
+    bound = union(assigned, _RESERVED_BINDINGS, extra)
     free = Set{Symbol}()
     _free!(free, body, bound)
     filter!(name -> !isdefined(mod, name), free)
