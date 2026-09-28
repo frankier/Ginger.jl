@@ -4,13 +4,14 @@ A Jinja-style template engine for Julia that compiles templates to Julia code
 during macro expansion. Rendering is ordinary, type-specialized Julia: no runtime
 parsing, no runtime compilation, and no modules generated at runtime.
 
-This repository currently implements **milestone M5** from `PLAN.md`: a
+This repository currently implements **milestone M6** from `PLAN.md`: a
 single-file pipeline with the full Julia control-flow surface, inferred context,
 HTML escaping, the `DefaultHelpers` filter library, template composition through
 `{% macro %}`, `{% include %}`, `{% import %}`, and `{% from %}`, static
 template inheritance through `{% extends %}`, `{% block %}`, and `super()` /
-`super(n)`, and provenance diagnostics: caret `TemplateSyntaxError`s, a
-compile-time provenance registry, `TemplateError`, and `template_backtrace`.
+`super(n)`, provenance diagnostics (caret `TemplateSyntaxError`s, a compile-time
+provenance registry, `TemplateError`, and `template_backtrace`), and
+`@templates` directory discovery with precompilation-aware dependency tracking.
 See [Status](#status) for what is and is not in place.
 
 ## Example
@@ -20,12 +21,12 @@ module MyApp
 
 using Ginger
 
-@template "templates/index.html" as INDEX
+@templates "templates" as TPL
 
 end
 
-Ginger.render(INDEX; user = "frank", posts = posts)   # -> String
-Ginger.render!(stdout, INDEX; user = "frank")
+Ginger.render(TPL.index; user = "frank", posts = posts)   # -> String
+Ginger.render!(stdout, TPL.index; user = "frank")
 ```
 
 `templates/index.html`:
@@ -101,8 +102,11 @@ template, and `Ginger.DefaultHelpers` provides `upper`, `lower`, `title`,
   backtraces point at `templates/index.html:42`, and render errors are wrapped in
   a `TemplateError` whose provenance chain is available through
   `template_backtrace`. See [Errors](#errors).
-- **Macro**: `@template "path" [as NAME] [config = Config(...)]`, with
-  `include_dependency` so template edits invalidate the host package.
+- **Macro**: `@template "path" [as NAME] [config = Config(...)]` compiles one
+  file, and `@templates "dir" [as NAME] [config = ...] [helpers = (Mod, …)]`
+  compiles every template under a directory. Both read files at expansion time
+  and use `include_dependency` so template edits invalidate the host package. See
+  [Templates and precompilation](#templates-and-precompilation).
 
 ## Helpers and filters
 
@@ -121,6 +125,11 @@ include("filters.jl")           # slugify, excerpt, …
 
 end
 ```
+
+Alternatively, `@templates` accepts `helpers = (MyFilters,)` and emits
+`using MyFilters` into the host module, so the exported names of a helper package
+are available without a separate `using` at the call site. See
+[Templates and precompilation](#templates-and-precompilation).
 
 `Ginger.DefaultHelpers` provides these helpers:
 
@@ -267,15 +276,89 @@ package-relative `path`, and `abs_path` resolved against `Config.source_root`.
 currently being handled. An exception with no template frame propagates
 unchanged, so a helper called outside a template keeps its own exception type.
 
+## Templates and precompilation
+
+`@templates "views"` discovers every file under `views/` recursively and binds a
+`NamedTuple` of `Template`s named `TEMPLATES` (override with `as NAME`). The path
+is relative to the file that contains the macro call, exactly as for `@template`.
+Subdirectories become nested `NamedTuple`s and a file is keyed by its stem, so
+`views/partials/head.html` is `TPL.partials.head`:
+
+```julia
+module MyApp
+
+using Ginger
+
+@templates "views" as TPL
+
+end
+
+render(TPL.index; user = "frank")          # views/index.html
+render(TPL.partials.head)                  # views/partials/head.html
+```
+
+All references (`{% extends %}`, `{% include %}`, `{% import %}`, `{% from %}`)
+resolve inside the set, and a template referenced from several places is
+compiled once. `{% extends %}` parents are compiled before their children, so
+the generated definitions are always in dependency order.
+
+`helpers = (MyHelpers, MyFilters)` emits `using MyHelpers, MyFilters` into the
+host module before the templates are compiled, so the exported functions and
+macros of those modules are available in every template. The entries must name
+modules, not values:
+
+```julia
+@templates "views" helpers = (MyFilters,)
+```
+
+A file is discovered whatever its extension, and hidden entries (a leading `.`)
+are skipped. Two files whose stems map to the same key, or a file that collides
+with a subdirectory name, is a compile-time `ArgumentError`.
+
+### Precompilation and the dev loop
+
+`@templates` and `@template` read every template and every directory at
+macro-expansion time and register them with `Base.include_dependency`. The
+generated functions therefore land in the host package's precompile image, and
+no template is parsed or compiled at runtime.
+
+The dependency registration also drives the development loop. Editing a template
+changes the package's precompile key, so the next `using MyApp` recompiles it.
+Adding a template changes the recorded directory contents, so a new file is
+discovered and bound on the next load. Removing a template invalidates the
+package as well. There is no cache, no file watcher, and no hashing in Ginger;
+the standard Julia dev loop (a reload, or `Revise.jl`) re-expands the macros.
+
+Because the whole set is compiled in one expansion, a template that is only used
+internally (a partial, a macro library) still becomes a key in the `NamedTuple`.
+Use the keys you need and ignore the rest.
+
+### Single file
+
+For one file, use `@template`:
+
+```julia
+@template "views/index.html" as INDEX
+render(INDEX; user = "frank")
+```
+
+`@template` reads the file at expansion time and registers it with
+`include_dependency` in the same way. The default const name is the uppercased
+file stem.
+
 ## Status
 
-M5 covers single-file rendering, inferred context, escaping, the standard helper
+M6 covers single-file rendering, inferred context, escaping, the standard helper
 library, template composition through macros, includes, and imports, static
-template inheritance, and provenance diagnostics (caret `TemplateSyntaxError`s,
-the compile-time registry, `TemplateError`, and `template_backtrace`). Not yet
-implemented (see `PLAN.md` §18):
+template inheritance, provenance diagnostics (caret `TemplateSyntaxError`s, the
+compile-time registry, `TemplateError`, and `template_backtrace`), and
+`@templates` directory discovery with precompilation-aware dependency tracking.
+Everything described in this README is implemented; the remaining work is the
+M7 polish in `PLAN.md` §18 (escape elision, benchmarks, a differential comparison
+against OteraEngine, and the 1.0 API freeze).
 
-- `@templates` directory discovery and the precompile probe (M6).
+Known limitation: cross-package `{% extends %}` is not supported. All template
+references resolve inside one `@templates` expansion.
 
 ### Context inference caveat
 
@@ -304,5 +387,10 @@ The `config` expression is evaluated in the host module at macro-expansion time.
 ```sh
 julia --project=. -e 'using Pkg; Pkg.test()'
 ```
+
+`test/precompile_probe` is a real package that uses `@templates`. The test suite
+precompiles it in a scratch environment, then checks in separate processes that a
+second load does not recompile and that editing or adding a template does. That
+check is why the suite takes a minute longer than the unit tests.
 
 Source and tests are formatted with [Runic](https://github.com/fredrikekre/Runic.jl).

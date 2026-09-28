@@ -47,12 +47,13 @@ mutable struct CompilationUnit
     compiled::Dict{String, CompiledTemplate}
     in_progress::Set{String}
     sources::Dict{Symbol, SourceInfo}
+    helpers::Vector{Module}
 end
 
-function CompilationUnit(mod::Module, cfg::Config, unit_id::AbstractString)
+function CompilationUnit(mod::Module, cfg::Config, unit_id::AbstractString; helpers::Vector{Module} = Module[])
     return CompilationUnit(
         mod, cfg, String(unit_id), Any[], Dict{String, CompiledTemplate}(),
-        Set{String}(), Dict{Symbol, SourceInfo}(),
+        Set{String}(), Dict{Symbol, SourceInfo}(), helpers,
     )
 end
 
@@ -89,6 +90,25 @@ end
 # other's methods. `unit_id` is derived from the macro call site.
 _template_id(unit::CompilationUnit, virtual_path::AbstractString) =
     _stable_id(unit.unit_id * "\0" * virtual_path)
+
+# The provenance registry const name is derived from the unit id, so several
+# `@template` / `@templates` expansions in one module never collide.
+_registry_sym(unit::CompilationUnit) = Symbol("__ginger_sources_", unit.unit_id, "__")
+
+function _registry_def(unit::CompilationUnit)
+    sym = _registry_sym(unit)
+    return sym, Expr(:const, Expr(:(=), sym, _sources_expr(unit.sources)))
+end
+
+# A `Template` value referring to the generated entry function and the unit's
+# shared provenance registry.
+function _template_value_expr(unit::CompilationUnit, compiled::CompiledTemplate)
+    return Expr(
+        :call, GlobalRef(Ginger, :Template),
+        compiled.virtual_path, GlobalRef(unit.mod, compiled.enter_sym),
+        GlobalRef(unit.mod, _registry_sym(unit)), unit.cfg.source_root,
+    )
+end
 
 """
     compile_template!(unit, virtual_path, abs_path) -> CompiledTemplate
@@ -196,7 +216,7 @@ function _body_function(body_sym::Symbol, blocks_sym::Symbol, normalized, bindin
         call = Expr(:call, GlobalRef(unit.mod, normalized.parent.body_sym), :out, :ctx, :blocks)
         block = Expr(:block, lnn, merged, Expr(:return, call))
     else
-        vars = context_vars(_toplevel(normalized.stmts), unit.mod, binding_names)
+        vars = context_vars(_toplevel(normalized.stmts), unit.mod, binding_names, unit.helpers)
         prologue = _prologue(bindings, vars, virtual_path, unit.cfg.undefined)
         block = Expr(:block, lnn, prologue..., normalized.stmts...)
     end
@@ -212,7 +232,7 @@ end
 # A block body is a module-level function taking the same `(out, ctx, blocks)`
 # arguments as a body function, so `super()` and nested blocks dispatch uniformly.
 function _block_function(b, bindings, unit::CompilationUnit, virtual_path::String)
-    vars = context_vars(b.body, unit.mod, Set{Symbol}(first.(bindings)))
+    vars = context_vars(b.body, unit.mod, Set{Symbol}(first.(bindings)), unit.helpers)
     prologue = _prologue(bindings, vars, virtual_path, unit.cfg.undefined)
     lnn = LineNumberNode(1, Symbol(virtual_path))
     block = Expr(:block, lnn, prologue..., b.body)
@@ -246,7 +266,7 @@ function _macro_function(m::MacroInfo, bindings, unit::CompilationUnit, virtual_
     params = _lambda_params(m.lambda.args[1])
     body = m.lambda.args[2]
     bound = union(Set{Symbol}(first.(bindings)), _params(params))
-    vars = context_vars(body, unit.mod, bound)
+    vars = context_vars(body, unit.mod, bound, unit.helpers)
     if !isempty(vars)
         throw(
             TemplateSyntaxError(

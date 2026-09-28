@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% import "widgets.html" as widgets %}
+{% block head %}{% include "partials/head.html" %}{% endblock %}
+{% block content %}
+<h1>{{ heading }}</h1>
+{{ widgets.badge(user) }}
+{% endblock %}

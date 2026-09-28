@@ -7,22 +7,30 @@ const _COMPOUND_ASSIGN_OPS = Set{Symbol}(
 const _RESERVED_BINDINGS = Set{Symbol}([:out, :ctx, :blocks])
 
 """
-    context_vars(body, mod) -> Vector{Symbol}
+    context_vars(body, mod, extra=Set{Symbol}(), helpers=Module[]) -> Vector{Symbol}
 
 Infer the template's context by free-variable analysis. A name is a context
-variable when it is neither bound locally in `body` nor resolvable in the host
-module `mod` (checked with `isdefined`). The result is sorted for deterministic
-generated code.
+variable when it is neither bound locally in `body`, nor resolvable in the host
+module `mod` (checked with `isdefined`), nor an exported name of one of the
+`helpers` modules. Helper modules are passed explicitly because a `using` applied
+during macro expansion is not visible to `isdefined` until the enclosing
+top-level statement finishes. The result is sorted for deterministic generated
+code.
 """
-function context_vars(body, mod::Module, extra::Set{Symbol} = Set{Symbol}())
+function context_vars(body, mod::Module, extra::Set{Symbol} = Set{Symbol}(), helpers::Vector{Module} = Module[])
     assigned = Set{Symbol}()
     _assigned!(assigned, body)
     bound = union(assigned, _RESERVED_BINDINGS, extra)
     free = Set{Symbol}()
     _free!(free, body, bound)
-    filter!(name -> !isdefined(mod, name), free)
+    filter!(name -> !isdefined(mod, name) && !_helper_global(helpers, name), free)
     return sort!(collect(free))
 end
+
+# A helper name is a host global only when the helper module exports it, because
+# `using` imports exported names only.
+_helper_global(helpers::Vector{Module}, name::Symbol) =
+    any(m -> Base.isexported(m, name) && isdefined(m, name), helpers)
 
 # --- names assigned in the current scope -----------------------------------
 

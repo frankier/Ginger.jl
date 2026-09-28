@@ -1,0 +1,7 @@
+name = "PrecompileProbe"
+uuid = "9a88c126-f3bf-4d1c-ab86-4a4ead75e117"
+authors = ["Ginger tests"]
+version = "0.1.0"
+
+[deps]
+Ginger = "f3316fcd-6d8d-40c6-bfa5-e1af2871fc6a"

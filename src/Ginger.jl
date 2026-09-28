@@ -6,12 +6,14 @@ macro expansion. Rendering is plain, type-specialized Julia: there is no runtime
 parsing, no runtime compilation, and no generated modules at runtime.
 
 See `PLAN.md` for the full design. The current implementation covers milestone
-M5: single-file rendering with the full Julia control-flow surface, inferred
+M6: single-file rendering with the full Julia control-flow surface, inferred
 context, HTML escaping, the `DefaultHelpers` filter library, template
 composition through `{% macro %}`, `{% include %}`, `{% import %}`, and
 `{% from %}`, static inheritance through `{% extends %}`, `{% block %}`, and
-`super()` / `super(n)`, and provenance diagnostics: caret `TemplateSyntaxError`s,
-a compile-time provenance registry, `TemplateError`, and `template_backtrace`.
+`super()` / `super(n)`, provenance diagnostics (caret `TemplateSyntaxError`s, a
+compile-time provenance registry, `TemplateError`, and `template_backtrace`),
+and `@templates` directory discovery with precompilation-aware dependency
+tracking.
 """
 module Ginger
 
@@ -27,10 +29,11 @@ include("parse.jl")
 include("scope.jl")
 include("compose.jl")
 include("normalize.jl")
+include("loader.jl")
 include("macros.jl")
 include("api.jl")
 
-export @template, Template, render, render!, Config, HTMLString, escape, safe, default
+export @template, @templates, Template, render, render!, Config, HTMLString, escape, safe, default
 
 export template_backtrace, TemplateError
 
