@@ -22,4 +22,6 @@ vars(str, mod) = G.context_vars(Meta.parseall(str), mod)
     @test vars("function g(u)\n    u + w\nend", Main) == [:w]
     @test vars("if flag\n    thenval\nelse\n    elseval\nend", Main) == [:elseval, :flag, :thenval]
     @test vars("begin\n    local z = 1\n    z + q\nend", Main) == [:q]
+    @test vars("try\n    risky()\ncatch e\n    log(e)\nend", Main) == [:risky]
+    @test vars("try\n    risky()\ncatch e\n    log(e)\nelse\n    ok()\nfinally\n    cleanup()\nend", Main) == [:cleanup, :ok, :risky]
 end

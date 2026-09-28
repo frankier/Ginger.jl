@@ -3,6 +3,7 @@
     EXPRESSION = 1
     STATEMENT = 2
     COMMENT = 3
+    RAW = 4
 end
 
 """
@@ -98,6 +99,9 @@ function next_token!(lx::Lexer)
     end
 
     tag, next_i = _parse_tag(lx, tag_start, kind)
+    if tag.kind === STATEMENT && tag.text == "raw"
+        tag, next_i = _scan_raw(lx, next_i, tag)
+    end
     if tag_start > lx.i
         text_pos = _pos_at(lx, lx.i)
         text = String(SubString(lx.src, lx.i, prevind(lx.src, tag_start)))
@@ -107,6 +111,66 @@ function next_token!(lx::Lexer)
     end
     lx.i = next_i
     return tag
+end
+
+"""
+    _scan_raw(lx, content_start, opener) -> (Token, Int)
+
+Scan a `{% raw %}` block. `content_start` is the index just after the opening
+tag. The body up to the matching `{% endraw %}` becomes a single `RAW` token and
+is never interpreted. Returns the token together with the index just after the
+closing tag. Explicit `-` markers on the two tags trim the body edges; the
+`trim_blocks`/`lstrip_blocks` config deliberately does not touch raw bodies.
+"""
+function _scan_raw(lx::Lexer, content_start::Int, opener::Token)
+    j = content_start
+    while true
+        found = findnext(lx.cfg.statement_start, lx.src, j)
+        if found === nothing
+            throw(
+                TemplateSyntaxError(
+                    "unterminated `{% raw %}` (expected `{% endraw %}`)", opener.pos,
+                ),
+            )
+        end
+        k = first(found)
+        # Only a tag whose body is exactly `endraw` closes the block; anything
+        # else is literal raw text, so keep scanning just past this opener.
+        if _looks_like_endraw(lx.src, k, lx.cfg.statement_start)
+            closer, after = _parse_tag(lx, k, STATEMENT)
+            if closer.text == "endraw"
+                content = k > content_start ?
+                    String(SubString(lx.src, content_start, prevind(lx.src, k))) : ""
+                opener.rstrip && (content = lstrip(content))
+                closer.lstrip && (content = rstrip(content))
+                tok = Token(
+                    RAW, content, _pos_at(lx, content_start),
+                    opener.lstrip, opener.lkeep, closer.rstrip, closer.rkeep,
+                )
+                return tok, after
+            end
+        end
+        j = nextind(lx.src, k)
+    end
+    return
+end
+
+# True when the tag beginning at `k` is `endraw`, allowing whitespace-control
+# flags and surrounding whitespace. Used to tell a real `{% endraw %}` apart from
+# a `{%` that is just literal raw text.
+function _looks_like_endraw(s::String, k::Int, start_delim::AbstractString)
+    n = ncodeunits(s)
+    p = k + ncodeunits(start_delim)
+    p > n && return false
+    if s[p] == '-' || s[p] == '+'
+        p = nextind(s, p)
+    end
+    while p <= n && isspace(s[p])
+        p = nextind(s, p)
+    end
+    startswith(SubString(s, p), "endraw") || return false
+    q = p + ncodeunits("endraw")
+    return q > n || !(isletter(s[q]) || isdigit(s[q]) || s[q] == '_')
 end
 
 function _next_opener(lx::Lexer)

@@ -121,6 +121,8 @@ function _free!(out::Set{Symbol}, e, bound::Set{Symbol})
         inner = union(bound, _signature_params(e.args[1]), body === nothing ? Set{Symbol}() : _immediate_assigned(body))
         _free!(out, e.args[1], inner)
         body === nothing || _free!(out, body, inner)
+    elseif head === :try
+        _free_try!(out, e, bound)
     elseif head === :let
         _free_let!(out, e, bound)
     elseif head === :for
@@ -166,6 +168,19 @@ function _free_lhs!(out::Set{Symbol}, lhs, bound::Set{Symbol})
         elseif lhs.head === :.
             _free!(out, lhs.args[1], bound)
         end
+    end
+    return nothing
+end
+
+function _free_try!(out::Set{Symbol}, e, bound::Set{Symbol})
+    _free!(out, e.args[1], bound)
+    catchvar = length(e.args) >= 2 ? e.args[2] : false
+    if length(e.args) >= 3 && e.args[3] isa Expr
+        inner = catchvar isa Symbol ? union(bound, Set{Symbol}([catchvar])) : bound
+        _free!(out, e.args[3], inner)
+    end
+    for i in 4:length(e.args)
+        _free!(out, e.args[i], bound)
     end
     return nothing
 end

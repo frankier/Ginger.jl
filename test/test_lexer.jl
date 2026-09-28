@@ -88,3 +88,23 @@ end
     @test err.pos !== nothing
     @test err.pos.line == 1
 end
+
+@testset "lexer: raw" begin
+    toks = tokenize("a{% raw %}{{ x }} {% if %}{% endraw %}b")
+    @test [t.kind for t in toks] == [G.TEXT, G.RAW, G.TEXT]
+    @test toks[1].text == "a"
+    @test toks[2].text == "{{ x }} {% if %}"
+    @test toks[3].text == "b"
+
+    toks = tokenize("x   {%- raw -%}   y   {%- endraw -%}   z")
+    @test toks[2].text == "y"
+
+    # Other tags inside a raw body are literal text, not structure.
+    toks = tokenize("{% raw %}{% if x %}y{% endraw %}")
+    @test toks[1].kind == G.RAW
+    @test toks[1].text == "{% if x %}y"
+    toks = tokenize("{% raw %}{% {% endraw %}")
+    @test toks[1].text == "{% "
+
+    @test_throws G.TemplateSyntaxError tokenize("a{% raw %}b")
+end

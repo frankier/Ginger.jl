@@ -6,7 +6,8 @@ macro expansion. Rendering is plain, type-specialized Julia: there is no runtime
 parsing, no runtime compilation, and no generated modules at runtime.
 
 See `PLAN.md` for the full design. The current implementation covers milestone
-M0: single-file end-to-end rendering.
+M1: single-file rendering with the full Julia control-flow surface, `{% raw %}`,
+`for`/`else`, `end*` aliases, and structural diagnostics.
 """
 module Ginger
 
