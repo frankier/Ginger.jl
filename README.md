@@ -4,12 +4,14 @@ A Jinja-style template engine for Julia that compiles templates to Julia code
 during macro expansion. Rendering is ordinary, type-specialized Julia: no runtime
 parsing, no runtime compilation, and no modules generated at runtime.
 
-This repository currently implements **milestone M4** from `PLAN.md`: a
+This repository currently implements **milestone M5** from `PLAN.md`: a
 single-file pipeline with the full Julia control-flow surface, inferred context,
 HTML escaping, the `DefaultHelpers` filter library, template composition through
-`{% macro %}`, `{% include %}`, `{% import %}`, and `{% from %}`, and static
+`{% macro %}`, `{% include %}`, `{% import %}`, and `{% from %}`, static
 template inheritance through `{% extends %}`, `{% block %}`, and `super()` /
-`super(n)`. See [Status](#status) for what is and is not in place.
+`super(n)`, and provenance diagnostics: caret `TemplateSyntaxError`s, a
+compile-time provenance registry, `TemplateError`, and `template_backtrace`.
+See [Status](#status) for what is and is not in place.
 
 ## Example
 
@@ -94,8 +96,11 @@ template, and `Ginger.DefaultHelpers` provides `upper`, `lower`, `title`,
 - **Diagnostics**: unclosed template blocks (`{% for %}`, `{% if %}`, …) and an
   unterminated `{% raw %}` are reported as `TemplateSyntaxError` at the opening
   tag. Julia syntax errors in a tag are translated through the offset map to the
-  template line, and generated `LineNumberNode`s carry the virtual template path
-  so runtime backtraces point at `templates/index.html:42`.
+  template line and rendered as a caret diagnostic against the template source.
+  Generated `LineNumberNode`s carry the virtual template path, so runtime
+  backtraces point at `templates/index.html:42`, and render errors are wrapped in
+  a `TemplateError` whose provenance chain is available through
+  `template_backtrace`. See [Errors](#errors).
 - **Macro**: `@template "path" [as NAME] [config = Config(...)]`, with
   `include_dependency` so template edits invalidate the host package.
 
@@ -221,14 +226,55 @@ once at the top level, `{% block %}` may not appear under control flow, block
 and macro names must be unique within a template, and an extending template may
 not emit text outside a block (whitespace between tags is ignored).
 
+## Errors
+
+Ginger reports two kinds of problems: compile-time template errors and
+render-time provenance.
+
+A template that cannot be lexed, parsed, or normalized raises
+`TemplateSyntaxError`. When the offending template text is available, the error
+renders the line with a caret:
+
+```
+TemplateSyntaxError: unexpected `)`
+  --> templates/syntax_err.html:3:10
+    |
+  3 | {{ 1 + }}
+    |          ^
+```
+
+The line and caret come from the synthetic-to-template offset map, which records
+one position per emitted chunk: the diagnostic points at the template line where
+the offending chunk starts, with the caret column clamped to that line.
+
+At render time, an exception raised inside a generated body, block, or macro is
+wrapped in `TemplateError`. The wrapper carries the provenance chain, recovered
+from the native backtrace through the compile-time registry that `@template`
+emits:
+
+```
+TemplateError: MissingContextVariable: context variable `user` was not passed
+  in block "content" at templates/index.html:3
+  at templates/base.html:12
+  rendered from app.jl:20
+```
+
+`template_backtrace(err)` returns the same chain as a `Vector{TemplateFrame}`,
+innermost first. Each frame has `kind` (`:body`, `:block`, `:macro`, or
+`:render`), `name` (the block or macro name when one applies), the
+package-relative `path`, and `abs_path` resolved against `Config.source_root`.
+`template_backtrace()` with no argument returns the chain of the `TemplateError`
+currently being handled. An exception with no template frame propagates
+unchanged, so a helper called outside a template keeps its own exception type.
+
 ## Status
 
-M4 covers single-file rendering, inferred context, escaping, the standard helper
-library, template composition through macros, includes, and imports, and static
-template inheritance. Not yet implemented (see `PLAN.md` §18):
+M5 covers single-file rendering, inferred context, escaping, the standard helper
+library, template composition through macros, includes, and imports, static
+template inheritance, and provenance diagnostics (caret `TemplateSyntaxError`s,
+the compile-time registry, `TemplateError`, and `template_backtrace`). Not yet
+implemented (see `PLAN.md` §18):
 
-- the provenance registry and structured `template_backtrace` (M5), including
-  caret diagnostics that render the offending template line;
 - `@templates` directory discovery and the precompile probe (M6).
 
 ### Context inference caveat

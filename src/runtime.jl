@@ -129,11 +129,16 @@ __ginger_empty_block__(out, ctx, blocks) = HTMLString("")
     Template
 
 A compiled template. `path` is the package-relative virtual path; `entry` is the
-generated entry function `entry(out; kwargs...)`.
+generated entry function `entry(out; kwargs...)`. `sources` is the compilation
+unit's provenance registry, mapping each generated function name to its
+[`SourceInfo`](@ref), and `source_root` resolves virtual paths to absolute paths
+for diagnostics.
 """
 struct Template{F <: Function}
     path::String
     entry::F
+    sources::Dict{Symbol, SourceInfo}
+    source_root::String
 end
 
 function Base.show(io::IO, t::Template)

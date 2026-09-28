@@ -46,10 +46,15 @@ mutable struct CompilationUnit
     defs::Vector{Any}
     compiled::Dict{String, CompiledTemplate}
     in_progress::Set{String}
+    sources::Dict{Symbol, SourceInfo}
 end
 
-CompilationUnit(mod::Module, cfg::Config, unit_id::AbstractString) =
-    CompilationUnit(mod, cfg, String(unit_id), Any[], Dict{String, CompiledTemplate}(), Set{String}())
+function CompilationUnit(mod::Module, cfg::Config, unit_id::AbstractString)
+    return CompilationUnit(
+        mod, cfg, String(unit_id), Any[], Dict{String, CompiledTemplate}(),
+        Set{String}(), Dict{Symbol, SourceInfo}(),
+    )
+end
 
 # A stable identifier for a virtual path, used to name generated functions. FNV-1a
 # keeps generated names reproducible across Julia versions and processes.
@@ -104,6 +109,20 @@ function compile_template!(unit::CompilationUnit, virtual_path::AbstractString, 
     Base.include_dependency(abs_path)
 
     src = read(abs_path, String)
+    try
+        return _compile_source!(unit, virtual_path, abs_path, src)
+    catch err
+        # Attach the template text so `showerror` can draw a caret. Errors from a
+        # referenced template were already attached by its own compilation.
+        if err isa TemplateSyntaxError && err.source === nothing &&
+                err.pos !== nothing && err.pos.file == virtual_path
+            throw(TemplateSyntaxError(err.msg, err.pos, src))
+        end
+        rethrow()
+    end
+end
+
+function _compile_source!(unit::CompilationUnit, virtual_path::String, abs_path::String, src::String)
     syn = synthesize(src, virtual_path, unit.cfg)
     parsed = parse_source(syn, virtual_path)
     normalized = normalize(parsed, syn, virtual_path, unit.cfg, unit, abs_path)
@@ -121,6 +140,14 @@ function compile_template!(unit::CompilationUnit, virtual_path::AbstractString, 
     enter_sym = Symbol("__ginger_enter_", id, "__")
     namespace_sym = Symbol("__ginger_macros_", id, "__")
     blocks_sym = Symbol("__ginger_blocks_", id, "__")
+
+    unit.sources[body_sym] = SourceInfo(virtual_path, :body, nothing)
+    for m in macros
+        unit.sources[m.sym] = SourceInfo(virtual_path, :macro, m.name)
+    end
+    for b in normalized.blocks
+        unit.sources[b.sym] = SourceInfo(virtual_path, :block, b.name)
+    end
 
     macro_defs = Any[_macro_function(m, bindings, unit, virtual_path) for m in macros]
     namespace_def = Expr(:const, Expr(:(=), namespace_sym, Expr(:tuple, (Expr(:(=), m.name, m.sym) for m in macros)...)))

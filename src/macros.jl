@@ -65,15 +65,37 @@ end
 function _compile_template(virtual_path::AbstractString, abs_path::AbstractString, name::Symbol, mod::Module, cfg::Config, source::LineNumberNode)
     unit = CompilationUnit(mod, cfg, _unit_id(cfg, virtual_path, source))
     root = compile_template!(unit, String(virtual_path), String(abs_path))
+    registry_sym = Symbol("__ginger_sources_", unit.unit_id, "__")
+    registry_def = Expr(:const, Expr(:(=), registry_sym, _sources_expr(unit.sources)))
     const_def = Expr(
         :const,
         Expr(
             :(=),
             name,
-            Expr(:call, GlobalRef(Ginger, :Template), root.virtual_path, root.enter_sym),
+            Expr(
+                :call, GlobalRef(Ginger, :Template),
+                root.virtual_path, root.enter_sym,
+                GlobalRef(mod, registry_sym), unit.cfg.source_root,
+            ),
         ),
     )
-    return Expr(:block, unit.defs..., const_def)
+    return Expr(:block, unit.defs..., registry_def, const_def)
+end
+
+# Emit the provenance registry as a typed `Dict` literal. Sorted by generated
+# function name so macro expansion is deterministic.
+function _sources_expr(sources::Dict{Symbol, SourceInfo})
+    dict_type = Expr(:curly, GlobalRef(Base, :Dict), GlobalRef(Base, :Symbol), GlobalRef(Ginger, :SourceInfo))
+    pairs = Any[
+        Expr(:call, GlobalRef(Base, :Pair), QuoteNode(func), _sourceinfo_expr(sources[func]))
+            for func in sort!(collect(keys(sources)))
+    ]
+    return Expr(:call, dict_type, pairs...)
+end
+
+function _sourceinfo_expr(info::SourceInfo)
+    name = info.name === nothing ? nothing : QuoteNode(info.name)
+    return Expr(:call, GlobalRef(Ginger, :SourceInfo), info.path, QuoteNode(info.kind), name)
 end
 
 function _fetchvar_expr(var::Symbol, virtual_path::String, undefined::Symbol)

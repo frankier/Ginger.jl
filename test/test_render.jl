@@ -64,7 +64,14 @@ end
 
 @testset "render: undefined modes" begin
     @test render(LENIENT) == "[]"
-    @test_throws Ginger.MissingContextVariable render(STRICT)
+    err = try
+        render(STRICT)
+        nothing
+    catch e
+        e
+    end
+    @test err isa Ginger.TemplateError
+    @test err.cause isa Ginger.MissingContextVariable
     @test default(Ginger.Undefined(:x, "t.html", 1), "fallback") == "fallback"
     @test default("value", "fallback") == "value"
 end
