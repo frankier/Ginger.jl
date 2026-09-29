@@ -27,6 +27,50 @@ macro template(args...)
 end
 
 """
+    ginger"source"
+
+Compile an inline template string during macro expansion and return a
+[`Template`](@ref) value. The string must be a literal. The template is compiled
+with the default [`Config`](@ref); any reference (`{% include %}`, …) resolves
+relative to the file that contains the macro call.
+
+Because the source is part of the host package's AST, an inline template is
+precompiled like a file-based one and needs no `include_dependency` entry.
+
+```julia
+t = ginger"Hello {{ name }}!"
+t(name = "frank")          # -> "Hello frank!"
+render(t; name = "frank")
+```
+"""
+macro ginger_str(s)
+    s isa String || throw(ArgumentError("ginger\"…\" requires a string literal"))
+    mod = __module__
+    cfg = Config()
+    virtual_path = "<inline>"
+    abs_path = _resolve_template_path(virtual_path, __source__)
+    unit = CompilationUnit(mod, cfg, _unit_id(cfg, virtual_path, __source__))
+    compiled = _compile_inline!(unit, virtual_path, abs_path, s)
+    _, registry_def = _registry_def(unit)
+    return esc(Expr(:block, unit.defs..., registry_def, _template_value_expr(unit, compiled)))
+end
+
+# Compile a source string that is not backed by a file. Shares the pipeline with
+# file-based templates; only the dependency registration and error-source
+# attachment differ.
+function _compile_inline!(unit::CompilationUnit, virtual_path::String, abs_path::String, src::String)
+    try
+        return _compile_source!(unit, virtual_path, abs_path, src)
+    catch err
+        if err isa TemplateSyntaxError && err.source === nothing &&
+                err.pos !== nothing && err.pos.file == virtual_path
+            throw(TemplateSyntaxError(err.msg, err.pos, src))
+        end
+        rethrow()
+    end
+end
+
+"""
     @templates path [as NAME] [config = CONFIG] [helpers = (Mod, …)]
 
 Compile every template under the directory `path` during macro expansion and

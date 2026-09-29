@@ -683,10 +683,17 @@ test/
   test_inheritance.jl    # extends/block/super, multi-level, nested blocks
   test_macros.jl
   test_errors.jl         # compile-time carets + runtime provenance chain
+  test_normalize.jl      # marker expansion, escape elision, restrictions
   test_precompile.jl
   templates/             # golden templates + expected output
   precompile_probe/      # a package using @templates
+  differential/          # dev-only OteraEngine comparison (own environment)
+benchmark/
+  Project.toml           # BenchmarkTools + OteraEngine environment
+  benchmarks.jl          # text/loop/inheritance vs Otera and hand-written
+  templates/
 docs/
+  Project.toml
   make.jl
   src/index.md
   src/syntax.md
@@ -695,6 +702,7 @@ docs/
   src/inheritance.md
   src/errors.md
   src/precompilation.md
+  src/api.md
   src/migration-from-otera.md
 ```
 
@@ -788,7 +796,9 @@ t(name = "frank")
 | M6 | `@templates` + precompilation | directory discovery, dependency ordering, `include_dependency`, precompile probe, Revise dev flow, docs |
 | M7 | Polish | escape elision, benchmarks, differential vs Otera, migration guide, 1.0 API freeze |
 
-Each milestone ends with docs updated and the full test suite green.
+M0–M7 are implemented. Each milestone ends with docs updated and the full test
+suite green. M7 lives in `docs/`, `benchmark/`, and `test/differential/`; the
+package version is `1.0.0` and the public API is frozen (`docs/src/api.md`).
 
 ## 19. Worked example (end-to-end)
 

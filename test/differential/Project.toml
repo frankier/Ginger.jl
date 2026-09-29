@@ -1,0 +1,11 @@
+[deps]
+Ginger = "f3316fcd-6d8d-40c6-bfa5-e1af2871fc6a"
+OteraEngine = "b2d7f28f-acd6-4007-8b26-bc27716e5513"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[sources]
+Ginger = {path = "../.."}
+
+[compat]
+OteraEngine = "1"
+julia = "1.13"

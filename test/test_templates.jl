@@ -4,20 +4,20 @@ using Ginger
 @templates "views" as V
 
 module GingerTestHelpers
-export shout
-shout(x) = uppercase(string(x)) * "!"
+    export shout
+    shout(x) = uppercase(string(x)) * "!"
 end
 
 @templates "helpers_views" as HTPL helpers = (Main.GingerTestHelpers,)
 
 module DefaultNameTemplates
-using Ginger
-@templates "views_small"
+    using Ginger
+    @templates "views_small"
 end
 
 module NoEscapeTemplates
-using Ginger
-@templates "views_small" as RAW config = Config(autoescape = false)
+    using Ginger
+    @templates "views_small" as RAW config = Config(autoescape = false)
 end
 
 @testset "@templates: directory discovery" begin

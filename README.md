@@ -4,15 +4,16 @@ A Jinja-style template engine for Julia that compiles templates to Julia code
 during macro expansion. Rendering is ordinary, type-specialized Julia: no runtime
 parsing, no runtime compilation, and no modules generated at runtime.
 
-This repository currently implements **milestone M6** from `PLAN.md`: a
-single-file pipeline with the full Julia control-flow surface, inferred context,
-HTML escaping, the `DefaultHelpers` filter library, template composition through
-`{% macro %}`, `{% include %}`, `{% import %}`, and `{% from %}`, static
-template inheritance through `{% extends %}`, `{% block %}`, and `super()` /
-`super(n)`, provenance diagnostics (caret `TemplateSyntaxError`s, a compile-time
-provenance registry, `TemplateError`, and `template_backtrace`), and
-`@templates` directory discovery with precompilation-aware dependency tracking.
-See [Status](#status) for what is and is not in place.
+This repository implements **milestone M7** from `PLAN.md`: a single-file
+pipeline with the full Julia control-flow surface, inferred context, HTML
+escaping with compile-time escape elision, the `DefaultHelpers` filter library,
+template composition through `{% macro %}`, `{% include %}`, `{% import %}`, and
+`{% from %}`, static template inheritance through `{% extends %}`, `{% block %}`,
+and `super()` / `super(n)`, provenance diagnostics (caret `TemplateSyntaxError`s,
+a compile-time provenance registry, `TemplateError`, and `template_backtrace`),
+and `@templates` directory discovery with precompilation-aware dependency
+tracking. The public API is frozen at 1.0. See [Status](#status) for details, and
+[`docs/`](docs) for the full documentation site.
 
 ## Example
 
@@ -66,6 +67,9 @@ Hello, {{ user }}!
   prologue binds context variables from the render context with the configured
   `undefined` mode (`:strict`, `:lenient`, or `:default`).
 - **Escaping**: `HTMLString`, `escape` (idempotent), `safe`, and `default`.
+  When the outermost expression is statically known to produce an `HTMLString`
+  (a `safe`/`escape`/`HTMLString` call, `super()`, or a template macro), the
+  autoescape wrapper is elided at compile time. The output is unchanged.
 - **Helpers and filters**: any function in the host module is callable from a
 template, and `Ginger.DefaultHelpers` provides `upper`, `lower`, `title`,
 `capitalize`, `trim`, `excerpt`, `truncate_at`, `replace_with`, `join_with`,
@@ -103,9 +107,10 @@ template, and `Ginger.DefaultHelpers` provides `upper`, `lower`, `title`,
   a `TemplateError` whose provenance chain is available through
   `template_backtrace`. See [Errors](#errors).
 - **Macro**: `@template "path" [as NAME] [config = Config(...)]` compiles one
-  file, and `@templates "dir" [as NAME] [config = ...] [helpers = (Mod, …)]`
-  compiles every template under a directory. Both read files at expansion time
-  and use `include_dependency` so template edits invalidate the host package. See
+  file, `@templates "dir" [as NAME] [config = ...] [helpers = (Mod, …)]`
+  compiles every template under a directory, and `ginger"…"` compiles an inline
+  string literal. All three compile at expansion time; the file-based forms use
+  `include_dependency` so template edits invalidate the host package. See
   [Templates and precompilation](#templates-and-precompilation).
 
 ## Helpers and filters
@@ -346,16 +351,36 @@ render(INDEX; user = "frank")
 `include_dependency` in the same way. The default const name is the uppercased
 file stem.
 
+### Inline
+
+For a template that lives in the source, use the `ginger"…"` string macro. It
+compiles during expansion and returns a `Template` value:
+
+```julia
+const GREETING = ginger"Hello {{ name }}!"
+render(GREETING; name = "frank")     # -> "Hello frank!"
+GREETING(name = "frank")             # the same
+```
+
+Any reference inside the string resolves relative to the file that contains the
+macro call. Because the source is part of the host package's AST, an inline
+template is precompiled like a file-based one and needs no `include_dependency`
+entry.
+
 ## Status
 
-M6 covers single-file rendering, inferred context, escaping, the standard helper
-library, template composition through macros, includes, and imports, static
-template inheritance, provenance diagnostics (caret `TemplateSyntaxError`s, the
-compile-time registry, `TemplateError`, and `template_backtrace`), and
-`@templates` directory discovery with precompilation-aware dependency tracking.
-Everything described in this README is implemented; the remaining work is the
-M7 polish in `PLAN.md` §18 (escape elision, benchmarks, a differential comparison
-against OteraEngine, and the 1.0 API freeze).
+M7 completes the engine. M6 covered single-file rendering, inferred context,
+escaping, the standard helper library, template composition through macros,
+includes, and imports, static template inheritance, provenance diagnostics
+(caret `TemplateSyntaxError`s, the compile-time registry, `TemplateError`, and
+`template_backtrace`), and `@templates` directory discovery with
+precompilation-aware dependency tracking. M7 adds compile-time escape elision, a
+benchmark suite, a dev-only differential comparison against OteraEngine, a full
+Documenter documentation site, and the 1.0 public-API freeze.
+
+Everything described in this README is implemented. The package version is
+`1.0.0`; the public API is listed in [`docs/src/api.md`](docs/src/api.md) and is
+frozen. Anything named `__ginger_*` is internal.
 
 Known limitation: cross-package `{% extends %}` is not supported. All template
 references resolve inside one `@templates` expansion.
@@ -394,3 +419,24 @@ second load does not recompile and that editing or adding a template does. That
 check is why the suite takes a minute longer than the unit tests.
 
 Source and tests are formatted with [Runic](https://github.com/fredrikekre/Runic.jl).
+
+## Benchmarks, differential tests, and docs
+
+Three development environments live outside the package's test target:
+
+```sh
+# Benchmarks (BenchmarkTools) vs OteraEngine and hand-written interpolation
+julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+julia --project=benchmark benchmark/benchmarks.jl
+
+# Differential comparison against OteraEngine (dev-only, separate env)
+julia --project=test/differential -e 'using Pkg; Pkg.instantiate()'
+julia --project=test/differential test/differential/runtests.jl
+
+# Documentation site (Documenter)
+julia --project=docs -e 'using Pkg; Pkg.instantiate()'
+julia --project=docs docs/make.jl
+```
+
+All three use a `[sources]` entry pointing Ginger at the checkout, so no manual
+`Pkg.develop` is needed.

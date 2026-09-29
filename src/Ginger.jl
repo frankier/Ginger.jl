@@ -6,14 +6,14 @@ macro expansion. Rendering is plain, type-specialized Julia: there is no runtime
 parsing, no runtime compilation, and no generated modules at runtime.
 
 See `PLAN.md` for the full design. The current implementation covers milestone
-M6: single-file rendering with the full Julia control-flow surface, inferred
-context, HTML escaping, the `DefaultHelpers` filter library, template
-composition through `{% macro %}`, `{% include %}`, `{% import %}`, and
-`{% from %}`, static inheritance through `{% extends %}`, `{% block %}`, and
-`super()` / `super(n)`, provenance diagnostics (caret `TemplateSyntaxError`s, a
-compile-time provenance registry, `TemplateError`, and `template_backtrace`),
-and `@templates` directory discovery with precompilation-aware dependency
-tracking.
+M7: single-file rendering with the full Julia control-flow surface, inferred
+context, HTML escaping with compile-time escape elision, the `DefaultHelpers`
+filter library, template composition through `{% macro %}`, `{% include %}`,
+`{% import %}`, and `{% from %}`, static inheritance through `{% extends %}`,
+`{% block %}`, and `super()` / `super(n)`, provenance diagnostics (caret
+`TemplateSyntaxError`s, a compile-time provenance registry, `TemplateError`, and
+`template_backtrace`), and `@templates` directory discovery with
+precompilation-aware dependency tracking. The public API is frozen at 1.0.
 """
 module Ginger
 
@@ -33,9 +33,10 @@ include("loader.jl")
 include("macros.jl")
 include("api.jl")
 
-export @template, @templates, Template, render, render!, Config, HTMLString, escape, safe, default
+export @template, @templates, @ginger_str, Template, render, render!, Config, HTMLString, escape, safe, default
 
-export template_backtrace, TemplateError
+export TemplateSyntaxError, TemplateError, TemplateFrame, MissingContextVariable
+export template_backtrace
 
 export DefaultHelpers
 

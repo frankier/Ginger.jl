@@ -46,6 +46,7 @@ mutable struct NormalizeState
     blocks::Vector{BlockInfo}
     imports::Vector{Pair{Symbol, Any}}
     parent::Union{Nothing, CompiledTemplate}
+    safe_names::Set{Symbol}
 end
 
 """
@@ -69,10 +70,11 @@ function normalize(parsed::Expr, syn::Synthesis, virtual_path::AbstractString, c
     state = NormalizeState(
         unit, cfg, virtual_path, String(abs_path), syn,
         _template_id(unit, virtual_path), nothing, MacroInfo[], BlockInfo[],
-        Pair{Symbol, Any}[], nothing,
+        Pair{Symbol, Any}[], nothing, Set{Symbol}(),
     )
     pre = _extract_extends!(state, parsed)
     _check_block_placement!(state, pre)
+    _collect_safe_names!(state, pre)
     expanded = MacroTools.postwalk(x -> _expand_node(x, state), pre)
     rewritten = _rewrite_lines(expanded, line_map(syn.map), virtual_path)
     stmts = rewritten.head === :toplevel ? rewritten.args : Any[rewritten]
@@ -195,7 +197,7 @@ function _expand_marker(x::Expr, st::NormalizeState)
     x.head === :call || return x
     f = x.args[1]
     if f === :__ginger_print__
-        return _print_call(x.args[2], st.cfg)
+        return _print_call(x.args[2], st)
     elseif f === :__ginger_macro__
         return _expand_macro(x, st)
     elseif f === :__ginger_include__
@@ -322,8 +324,68 @@ function _ancestor_block_syms(parent::Union{Nothing, CompiledTemplate}, name::Sy
     return syms
 end
 
-function _print_call(value, cfg::Config)
-    if cfg.autoescape
+# Names that always produce an `HTMLString`, so the autoescape wrapper around a
+# direct call to one is redundant. `safe`/`escape`/`HTMLString` come from the
+# host module; a template's own macros and imported macros are added by
+# `_collect_safe_names!`.
+const _SAFE_HELPER_NAMES = Set{Symbol}([:safe, :escape, :HTMLString])
+
+# Collect the names that are statically known to produce `HTMLString`: this
+# template's macros, an `{% import %}` namespace, and `{% from %}`-imported macro
+# names. The pass runs before marker expansion because `postwalk` is bottom-up
+# and a `{{ macro() }}` may textually precede the macro definition.
+function _collect_safe_names!(st::NormalizeState, parsed::Expr)
+    parsed.head === :toplevel || return nothing
+    for a in parsed.args
+        a isa Expr || continue
+        a.head === :call || continue
+        f = a.args[1]
+        if (f === :__ginger_macro__ || f === :__ginger_import__) && length(a.args) == 3 &&
+                a.args[2] isa QuoteNode && a.args[2].value isa Symbol
+            push!(st.safe_names, a.args[2].value)
+        elseif f === :__ginger_fromimport__ && length(a.args) == 3 &&
+                a.args[3] isa Expr && a.args[3].head === :tuple
+            for pair in a.args[3].args
+                pair isa Expr && pair.head === :(=) && pair.args[1] isa Symbol || continue
+                push!(st.safe_names, pair.args[1])
+            end
+        end
+    end
+    return nothing
+end
+
+# True when `e` is a call whose result is guaranteed to be an `HTMLString`, so
+# wrapping it in `escape` is a no-op. Escape is idempotent, so eliding the
+# wrapper never changes the rendered output.
+function _statically_safe(e, st::NormalizeState)
+    e isa Expr || return false
+    e.head === :call || return false
+    return _safe_callee(e.args[1], st)
+end
+
+function _safe_callee(f, st::NormalizeState)
+    if f isa Symbol
+        f === :__ginger_super__ && return true
+        f in _SAFE_HELPER_NAMES && return true
+        return f in st.safe_names
+    elseif f isa GlobalRef
+        return f.mod === Ginger && f.name in (:escape, :safe, :HTMLString, :__ginger_render_super__)
+    elseif f isa Expr && f.head === :.
+        prop = f.args[end]
+        name = prop isa QuoteNode ? prop.value : prop
+        name isa Symbol || return false
+        name === :__ginger_render_super__ && return true
+        # `forms.field(...)` where `forms` is an `{% import %}` namespace.
+        root = f.args[1]
+        root isa Symbol && root in st.safe_names && return true
+        return name in _SAFE_HELPER_NAMES
+    end
+    return false
+end
+
+function _print_call(value, st::NormalizeState)
+    if st.cfg.autoescape
+        _statically_safe(value, st) && return Expr(:call, GlobalRef(Base, :print), :out, value)
         escaped = Expr(:call, GlobalRef(Ginger, :escape), value)
         return Expr(:call, GlobalRef(Base, :print), :out, escaped)
     end

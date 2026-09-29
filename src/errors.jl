@@ -20,7 +20,7 @@ Base.show(io::IO, p::Pos) = print(io, p.file, ':', p.line, ':', p.col)
 Raised at macro-expansion time when a template cannot be lexed, parsed, or
 normalized. `pos` points at the offending template position when one is known.
 
-`source` is the full template text. When it is present, [`Base.showerror`](@ref)
+`source` is the full template text. When it is present, `Base.showerror`
 renders the offending line with a caret under `pos`. `compile_template!` attaches
 the source to every error that belongs to the template it is compiling, so macro
 users get carets without doing anything.

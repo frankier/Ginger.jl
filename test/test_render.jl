@@ -26,6 +26,17 @@ using Ginger
 @template "templates/comment2.html" as COMMENT2
 @template "templates/fileinfo.html" as FILEINFO
 
+const INLINE = ginger"Hello {{ name }}!"
+const INLINE_CONTROL = ginger"{% for x in xs %}[{{ x }}]{% end %}"
+
+@testset "render: inline string macro" begin
+    @test INLINE isa Template
+    @test render(INLINE; name = "frank") == "Hello frank!"
+    @test INLINE(name = "frank") == "Hello frank!"
+    @test INLINE(; name = "<b>") == "Hello &lt;b&gt;!"
+    @test render(INLINE_CONTROL; xs = [1, 2, 3]) == "[1][2][3]"
+end
+
 @testset "render: text and context" begin
     @test render(HELLO; name = "Frank") == "Hello, Frank!"
     @test render(HELLO; name = "Wo<rld") == "Hello, Wo&lt;rld!"
