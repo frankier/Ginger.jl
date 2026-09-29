@@ -17,15 +17,13 @@ makedocs(
         "Migrating from OteraEngine" => "migration-from-otera.md",
     ],
     checkdocs = :none,
-    remotes = nothing, # no remote configured in this checkout
     format = Documenter.HTML(;
         prettyurls = get(ENV, "CI", nothing) == "true",
     ),
 )
 
-# Deployment is left to the repository owner. Set the remote and uncomment:
-#
-# deploydocs(
-#     repo = "github.com/<owner>/Ginger.jl.git",
-#     push_preview = true,
-# )
+deploydocs(
+    repo = "github.com/frankier/Ginger.jl.git",
+    devbranch = "main",
+    push_preview = true,
+)

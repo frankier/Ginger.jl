@@ -414,7 +414,24 @@ Ginger formats source and tests with
 
 ## Benchmarks, differential tests, and docs
 
-Three development environments live outside the package's test target:
+The root `Project.toml` declares a Pkg workspace containing the `test` and
+`docs` projects. One `Manifest.toml` at the repository root covers the package,
+the test environment, and the documentation environment:
+
+```sh
+julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
+
+`test/Project.toml` adds `Test` and `Pkg` on top of the package. The
+documentation site (Documenter) is built with:
+
+```sh
+julia --project=docs docs/make.jl
+```
+
+Benchmarks and the OteraEngine differential comparison are deliberately kept
+outside the workspace, so that `Pkg.test()` never depends on a third-party
+template engine:
 
 ```sh
 # Benchmarks (BenchmarkTools) vs OteraEngine and hand-written interpolation
@@ -424,11 +441,7 @@ julia --project=benchmark benchmark/benchmarks.jl
 # Differential comparison against OteraEngine (dev-only, separate env)
 julia --project=test/differential -e 'using Pkg; Pkg.instantiate()'
 julia --project=test/differential test/differential/runtests.jl
-
-# Documentation site (Documenter)
-julia --project=docs -e 'using Pkg; Pkg.instantiate()'
-julia --project=docs docs/make.jl
 ```
 
-All three use a `[sources]` entry that points Ginger at the checkout, so no
-manual `Pkg.develop` is necessary.
+Both standalone environments use a `[sources]` entry that points Ginger at the
+checkout, so no manual `Pkg.develop` is necessary.
