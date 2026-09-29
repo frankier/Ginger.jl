@@ -7,7 +7,7 @@ the generated module-level function that implements the block's default body.
 struct BlockInfo
     name::Symbol
     sym::Symbol
-    body::Any
+    body::Expr
     pos::Pos
 end
 
