@@ -14,7 +14,7 @@ macro argument.
 - `lstrip_blocks` (default `false`): remove whitespace from the start of a line
   to a block tag.
 - `autospace` (default `nothing`): when `true`, enables `trim_blocks` and
-  `lstrip_blocks`; when `false`, disables both. Overrides the individual flags.
+  `lstrip_blocks`. When `false`, disables both. Overrides the individual flags.
 - `autoescape` (default `true`): HTML-escape every `{{ }}` expression.
 - `source_root` (default `pwd()`): base directory used to resolve the virtual
   template paths stored in generated code.

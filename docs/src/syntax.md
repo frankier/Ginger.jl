@@ -6,14 +6,14 @@
 |------|---------|
 | `{{ expr }}` | Julia expression, HTML-escaped by default |
 | `{% stmt %}` | Julia statements and structural tags |
-| `{# … #}` | Comment; nestable, emits nothing |
-| `{% raw %} … {% endraw %}` | Literal text; delimiters inside are never interpreted |
+| `{# … #}` | Comment. Nestable, emits nothing |
+| `{% raw %} … {% endraw %}` | Literal text. Ginger never interprets delimiters inside |
 
-All three delimiter pairs are configurable through [`Config`](@ref).
+Ginger configures all three delimiter pairs through [`Config`](@ref).
 
 ## Whitespace control
 
-A `-` on the inside edge of a tag strips adjacent whitespace; a `+` forces it to
+A `-` on the inside edge of a tag strips adjacent whitespace. A `+` forces it to
 be preserved:
 
 ```jinja
@@ -26,7 +26,7 @@ Two config flags handle the common cases:
 
 - `trim_blocks` removes the first newline after a block tag.
 - `lstrip_blocks` removes whitespace from the start of a line up to a block tag.
-- `autospace = true` enables both; `autospace = false` disables both.
+- `autospace = true` enables both. `autospace = false` disables both.
 
 Ginger applies `trim_blocks` after expression tags as well as block tags. Jinja
 applies it to block tags only. If exact parity with Jinja matters, keep the
@@ -43,7 +43,7 @@ trailing newline with `+` or turn `trim_blocks` off.
 
 ## Statements and control flow
 
-`{% %}` contains arbitrary Julia statements. The leading keyword is emitted
+`{% %}` contains arbitrary Julia statements. Ginger emits the leading keyword
 verbatim, so Julia's parser matches the structure:
 
 ```jinja
@@ -59,8 +59,8 @@ verbatim, so Julia's parser matches the structure:
 `if` / `elseif` / `else`, `for`, `while`, `let`, `begin`, `try` / `catch` /
 `finally`, `function`, `do` blocks, and `quote` all work. Close them with
 `{% end %}` or the alias `endif`, `endfor`, `endwhile`, `endlet`, `endblock`,
-`endmacro`. Alias mismatch is not verified: Julia reports the resulting structure
-error at the template offset.
+`endmacro`. Ginger does not verify alias mismatch. Julia reports the resulting
+structure error at the template offset.
 
 Assignments and other statements work too:
 
@@ -74,7 +74,7 @@ Assignments and other statements work too:
 ### `for` … `else`
 
 Julia has no `for`/`else`, so Ginger lowers it. The `else` body runs only when
-the iterator produced nothing:
+the iterator produces nothing:
 
 ```jinja
 {% for post in posts %}
@@ -94,8 +94,8 @@ the iterator produced nothing:
 {{ length(posts) == 0 ? "none" : "some" }}
 ```
 
-Every expression is HTML-escaped by default. See [Filters and helpers](filters.md) for
-the escaping rules and the `safe` bypass.
+Ginger HTML-escapes every expression by default. See
+[Filters and helpers](filters.md) for the escaping rules and the `safe` bypass.
 
 ## Raw
 

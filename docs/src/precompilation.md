@@ -9,8 +9,8 @@
 render(INDEX; user = "frank")
 ```
 
-The default const name is the uppercased file stem. A relative path is resolved
-against the directory of the file that contains the macro call.
+The default const name is the uppercased file stem. Ginger resolves a relative
+path against the directory of the file that contains the macro call.
 
 [`@templates`](@ref) discovers every file under a directory recursively and binds
 a `NamedTuple` of `Template`s named `TEMPLATES` (override with `as NAME`).
@@ -30,14 +30,14 @@ render(TPL.index; user = "frank")          # views/index.html
 render(TPL.partials.head)                  # views/partials/head.html
 ```
 
-A file is discovered whatever its extension, and hidden entries (a leading `.`)
-are skipped. Two files whose stems map to the same key, or a file that collides
+Ginger discovers a file whatever its extension, and skips hidden entries (a
+leading `.`). Two files whose stems map to the same key, or a file that collides
 with a subdirectory name, is a compile-time `ArgumentError`.
 
 ## Helpers
 
 `helpers = (MyHelpers, MyFilters)` emits `using MyHelpers, MyFilters` into the
-host module before the templates are compiled, so the exported functions and
+host module before Ginger compiles the templates, so the exported functions and
 macros of those modules are available in every template:
 
 ```julia
@@ -63,13 +63,13 @@ package's precompile key, so the next `using MyApp` recompiles it. Adding a
 template changes the recorded directory contents, so a new file is discovered and
 bound on the next load. Removing a template invalidates the package as well.
 
-Ginger does not implement its own file watching or hashing; this is delegated to
-the standard Julia dev loop. Reload the package, or use `Revise.jl`, and the
-macros re-expand.
+Ginger does not implement its own file watching or hashing. It delegates that
+work to the standard Julia dev loop. Reload the package, or use `Revise.jl`, and
+the macros re-expand.
 
-Because the whole set is compiled in one expansion, a template that is only used
-internally (a partial, a macro library) still becomes a key in the `NamedTuple`.
-Use the keys you need and ignore the rest.
+Because Ginger compiles the whole set in one expansion, a template that is only
+used internally (a partial, a macro library) still becomes a key in the
+`NamedTuple`. Use the keys you need and ignore the rest.
 
 ## Single file
 

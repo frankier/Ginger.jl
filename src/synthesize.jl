@@ -58,7 +58,11 @@ const _END_ALIASES = Set{String}(
     ["end", "endif", "endfor", "endwhile", "endlet", "endblock", "endmacro"]
 )
 
-# A tracked, still-open template-level block.
+"""
+    _Frame
+
+A tracked, still-open template-level block.
+"""
 mutable struct _Frame
     kind::Symbol
     pos::Pos
@@ -66,9 +70,13 @@ mutable struct _Frame
     has_else::Bool
 end
 
-# Synthesis state for template-only structure. Julia's parser remains the
-# authority on matching; the stack exists so `{% for %}…{% else %}` can be
-# lowered and so unclosed blocks get a clear diagnostic.
+"""
+    _SynthState
+
+Synthesis state for template-only structure. Julia's parser remains the
+authority on matching. The stack exists so `{% for %}…{% else %}` can be lowered
+and so unclosed blocks get a clear diagnostic.
+"""
 mutable struct _SynthState
     stack::Vector{_Frame}
     loops::Int
@@ -150,7 +158,7 @@ end
     _emit_statement!(buf, entries, tok, state)
 
 Emit one `{% %}` statement, updating the template-level structure stack. A
-statement that opens a tracked block extends the stack; a closer pops it and
+statement that opens a tracked block extends the stack. A closer pops it and
 emits the `end` (or `end`/`end` pair) that closes the lowered shape.
 """
 function _emit_statement!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token, state::_SynthState)
@@ -251,7 +259,7 @@ end
 function _emit_block_opener!(buf::IOBuffer, entries::Vector{MapEntry}, tok::Token, state::_SynthState)
     for frame in state.stack
         frame.kind === :block || throw(
-            TemplateSyntaxError("`{% block %}` may not appear under control flow", tok.pos),
+            TemplateSyntaxError("`{% block %}` must not appear under control flow", tok.pos),
         )
     end
     name = strip(_after_keyword(tok.text, "block"))
@@ -326,8 +334,12 @@ end
 
 _valid_identifier(s::AbstractString) = occursin(r"^[A-Za-z_][A-Za-z0-9_]*$", s)
 
-# `name`, `name(params)`, or `name()`. Returns `(name, params)` with `params`
-# empty for the first form, or `nothing` when the signature is malformed.
+"""
+    _macro_signature(rest) -> Union{Tuple{String,String},Nothing}
+
+Parse `name`, `name(params)`, or `name()`. Return `(name, params)` with empty
+`params` for the first form, or `nothing` when the signature is malformed.
+"""
 function _macro_signature(rest::AbstractString)
     s = strip(rest)
     isempty(s) && return nothing
@@ -342,8 +354,12 @@ function _macro_signature(rest::AbstractString)
     return String(name), String(params)
 end
 
-# Find `word` at the top level (outside strings, brackets, and comments) and
-# split around it. Returns `(left, right)` or `nothing`.
+"""
+    _split_top_level(s, word) -> Union{Tuple{String,String},Nothing}
+
+Find `word` at the top level (outside strings, brackets, and comments) and split
+around it. Return `(left, right)` or `nothing`.
+"""
 function _split_top_level(s::AbstractString, word::AbstractString)
     s = String(s)
     n = ncodeunits(s)
@@ -505,8 +521,12 @@ function _right_strip_mode(tok::Token, cfg::Config)
     return :none
 end
 
-# Remove trailing spaces/tabs only when they make up a whole line, so that
-# `lstrip_blocks` never eats significant indentation after text.
+"""
+    _strip_line_end(text) -> String
+
+Remove trailing spaces and tabs only when they make up a whole line, so that
+`lstrip_blocks` never eats significant indentation after text.
+"""
 function _strip_line_end(text::AbstractString)
     stripped = rstrip(text, [' ', '\t'])
     return (isempty(stripped) || last(stripped) == '\n') ? String(stripped) : String(text)
@@ -531,7 +551,11 @@ function _emit_text!(buf::IOBuffer, entries::Vector{MapEntry}, text::AbstractStr
     return nothing
 end
 
-# Emit one chunk, one synthetic line at a time, recording a map entry per line.
+"""
+    _emit_chunk!(buf, entries, chunk, pos)
+
+Emit one chunk, one synthetic line at a time, and record a map entry per line.
+"""
 function _emit_chunk!(buf::IOBuffer, entries::Vector{MapEntry}, chunk::String, pos::Pos)
     isempty(chunk) && return nothing
     parts = split(chunk, '\n'; keepempty = true)

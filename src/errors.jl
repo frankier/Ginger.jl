@@ -54,9 +54,14 @@ function Base.showerror(io::IO, e::TemplateSyntaxError)
     return nothing
 end
 
-# The offset map records one position per emitted chunk, so a diagnostic column is
-# a byte delta into the synthetic source, not the template. Use the mapped line
-# and clamp the column to it so the caret stays on the offending chunk's line.
+"""
+    _diagnostic_line_col(source, pos) -> (line, col, text)
+
+Map a diagnostic position onto the template source. The offset map records one
+position per emitted chunk, so the column is a byte delta into the synthetic
+source, not the template. Clamp the column to the mapped line so the caret stays
+on the offending chunk's line.
+"""
 function _diagnostic_line_col(source::AbstractString, pos::Pos)
     lines = split(source, '\n')
     line = clamp(pos.line, 1, length(lines))
@@ -104,7 +109,7 @@ end
 
 One entry in a [`TemplateError`](@ref) provenance chain. `path` is the
 package-relative virtual path (or the host source file for the final `:render`
-frame); `abs_path` is that path resolved against the template's `Config.source_root`.
+frame). `abs_path` is that path resolved against the template's `Config.source_root`.
 `line` and `col` locate the failing statement inside the template (`col` is `0`
 when the native backtrace does not carry a column).
 """
@@ -122,8 +127,8 @@ end
 
 Wraps an exception raised while rendering a template, together with the
 provenance `chain` recovered from the native backtrace. `cause` is the original
-exception. `render` throws this only when at least one template frame is found;
-otherwise the original exception propagates unchanged.
+exception. `render` throws this only when at least one template frame is found.
+Otherwise the original exception propagates unchanged.
 """
 struct TemplateError <: Exception
     cause::Any
@@ -138,8 +143,12 @@ function Base.showerror(io::IO, e::TemplateError)
     return nothing
 end
 
-# The headline of the wrapped error, without the location that the provenance
-# chain already supplies.
+"""
+    _error_summary(e)
+
+Return the headline of the wrapped error, without the location that the
+provenance chain already supplies.
+"""
 function _error_summary(e)
     if e isa MissingContextVariable
         return string("MissingContextVariable: context variable `", e.name, "` was not passed")

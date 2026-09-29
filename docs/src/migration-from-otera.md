@@ -19,10 +19,10 @@ tmp(init = Dict(:user => "frank"))
 render(INDEX; user = "frank")
 ```
 
-There is no runtime `Template(...)` constructor in Ginger. The compiled value is
-a [`Template`](@ref) that holds the generated entry function, and `render` calls
-it. Because compilation is part of parsing the host package, the result is cached
-in the precompile image and no template is parsed at runtime.
+Ginger has no runtime `Template(...)` constructor. The compiled value is a
+[`Template`](@ref) that holds the generated entry function, and `render` calls
+it. Because compilation is part of parsing the host package, the precompile image
+caches the result and no template is parsed at runtime.
 
 | Topic | Ginger | OteraEngine |
 |-------|--------|-------------|
@@ -77,9 +77,9 @@ render(TPL.index; user = "frank", posts = posts)
 
 ### 4. Replace `@filter` registrations
 
-OteraEngine filters are registered with `@filter` and looked up by name at
-render time. Ginger has no registry: a filter is any function in the host module,
-and a parameterized filter returns a callable.
+OteraEngine registers filters with `@filter` and looks them up by name at render
+time. Ginger has no registry. A filter is any function in the host module, and a
+parameterized filter returns a callable.
 
 ```julia
 # OteraEngine
@@ -103,7 +103,7 @@ excerpt(n) = s -> length(s) <= n ? s : first(s, n) * "…"
 
 OteraEngine's built-in `upper`, `lower`, `escape`, `e`, and `safe` have Ginger
 equivalents in [`DefaultHelpers`](@ref). Import the module with
-`using Ginger.DefaultHelpers`. `quote_sql` has no equivalent; write it as a host
+`using Ginger.DefaultHelpers`. `quote_sql` has no equivalent. Write it as a host
 function if you need it.
 
 ### 5. Port control blocks
@@ -122,17 +122,17 @@ OteraEngine's `{% end %}` is accepted unchanged.
 
 `{% extends %}`, `{% block %}`, `{% endblock %}`, and `{% include %}` map
 directly, and all references resolve inside the `@templates` unit. `super()`
-maps directly; `super.super()` becomes `super(2)`.
+maps directly, and `super.super()` becomes `super(2)`.
 
-Cross-package `extends` is not supported in Ginger 1.0. Keep shared bases inside
-the same unit.
+Ginger does not support cross-package `extends`. Keep shared bases inside the
+same unit.
 
 ### 7. Port macros
 
 `{% macro name(args) %}…{% endmacro %}` maps directly. Ginger macros compile to
-functions returning `HTMLString` and are collected in the template's namespace
-for `{% import %}` and `{% from %}`. Duplicate names are rejected, and a macro
-body sees its arguments and host helpers, not the caller's context.
+functions that return `HTMLString`, and Ginger collects them in the template's
+namespace for `{% import %}` and `{% from %}`. Ginger rejects duplicate names,
+and a macro body sees its arguments and host helpers, not the caller's context.
 
 ### 8. Port configuration
 
@@ -150,13 +150,13 @@ OteraEngine reads a TOML file or a `Dict`. Ginger takes an immutable
 
 ## Gotchas
 
-- **Whitespace.** OteraEngine defaults to `autospace = true`; Ginger defaults to
+- **Whitespace.** OteraEngine defaults to `autospace = true`. Ginger defaults to
   `trim_blocks = false` and `lstrip_blocks = false`. Set `autospace = true` to
   match. Ginger also trims the newline after expression tags when `trim_blocks`
-  is on; keep the newline with `+` if that matters.
-- **Context collisions.** A name that is a host-module global (a helper, a
-  `Base` export) is not a context variable. Do not use a variable name that is
-  also a filter name; rename the render keyword instead.
+  is on, so keep the newline with `+` if that matters.
+- **Context collisions.** A name that is a host-module global (a helper, a `Base`
+  export) is not a context variable. Do not use a variable name that is also a
+  filter name. Rename the render keyword instead.
 - **No runtime paths.** A template path is a string literal known at macro
   expansion. Dynamic template selection needs an `if`/`elseif` over statically
   compiled templates.

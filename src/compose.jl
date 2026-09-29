@@ -36,7 +36,7 @@ end
 
 State shared by every template compiled from one `@template` / `@templates`
 expansion. `defs` accumulates generated top-level expressions in dependency
-order; `compiled` deduplicates templates reached through several references and
+order. `compiled` deduplicates templates reached through several references, and
 `in_progress` detects reference cycles.
 """
 mutable struct CompilationUnit
@@ -57,8 +57,12 @@ function CompilationUnit(mod::Module, cfg::Config, unit_id::AbstractString; help
     )
 end
 
-# A stable identifier for a virtual path, used to name generated functions. FNV-1a
-# keeps generated names reproducible across Julia versions and processes.
+"""
+    _stable_id(path) -> String
+
+A stable identifier for a virtual path, used to name generated functions. FNV-1a
+keeps generated names reproducible across Julia versions and processes.
+"""
 function _stable_id(path::AbstractString)
     h = UInt64(0xcbf29ce484222325)
     for byte in codeunits(path)
@@ -78,21 +82,33 @@ function _config_signature(cfg::Config)
     )
 end
 
-# Identify one `@template` / `@templates` expansion. The macro call site makes
-# the id unique even when the same file is compiled by several macros.
+"""
+    _unit_id(cfg, root_virtual_path, source) -> String
+
+Identify one `@template` / `@templates` expansion. The macro call site makes the
+id unique even when several macros compile the same file.
+"""
 function _unit_id(cfg::Config, root_virtual_path::AbstractString, source::LineNumberNode)
     site = source === nothing ? "" : string(source.file, ':', source.line)
     return _stable_id(_config_signature(cfg) * "\0" * root_virtual_path * "\0" * site)
 end
 
-# Generated names carry the unit id as well as the template path, so two separate
-# `@template` expansions that reference the same file do not redefine each
-# other's methods. `unit_id` is derived from the macro call site.
+"""
+    _template_id(unit, virtual_path) -> String
+
+Return the generated-name id for one template. Generated names carry the unit id
+and the template path, so two separate `@template` expansions that reference the
+same file do not redefine each other's methods.
+"""
 _template_id(unit::CompilationUnit, virtual_path::AbstractString) =
     _stable_id(unit.unit_id * "\0" * virtual_path)
 
-# The provenance registry const name is derived from the unit id, so several
-# `@template` / `@templates` expansions in one module never collide.
+"""
+    _registry_sym(unit) -> Symbol
+
+The provenance registry const name. It is derived from the unit id, so several
+`@template` / `@templates` expansions in one module never collide.
+"""
 _registry_sym(unit::CompilationUnit) = Symbol("__ginger_sources_", unit.unit_id, "__")
 
 function _registry_def(unit::CompilationUnit)
@@ -100,8 +116,12 @@ function _registry_def(unit::CompilationUnit)
     return sym, Expr(:const, Expr(:(=), sym, _sources_expr(unit.sources)))
 end
 
-# A `Template` value referring to the generated entry function and the unit's
-# shared provenance registry.
+"""
+    _template_value_expr(unit, compiled) -> Expr
+
+Build a `Template` value that refers to the generated entry function and the
+unit's shared provenance registry.
+"""
 function _template_value_expr(unit::CompilationUnit, compiled::CompiledTemplate)
     return Expr(
         :call, GlobalRef(Ginger, :Template),
@@ -188,8 +208,12 @@ function _compile_source!(unit::CompilationUnit, virtual_path::String, abs_path:
     return compiled
 end
 
-# `stmts` is already a flat list; rewrap for scope analysis so that top-level
-# `let`/`function` heads are visible as they are in the parsed tree.
+"""
+    _toplevel(stmts) -> Expr
+
+Rewrap the flat statement list for scope analysis, so that top-level
+`let`/`function` heads are visible as they are in the parsed tree.
+"""
 _toplevel(stmts) = Expr(:toplevel, stmts...)
 
 function _check_duplicate_macros(macros::Vector{MacroInfo})
@@ -229,8 +253,13 @@ function _blocks_tuple(blocks, mod::Module)
     return Expr(:tuple, (Expr(:(=), b.name, GlobalRef(mod, b.sym)) for b in blocks)...)
 end
 
-# A block body is a module-level function taking the same `(out, ctx, blocks)`
-# arguments as a body function, so `super()` and nested blocks dispatch uniformly.
+"""
+    _block_function(b, bindings, unit, virtual_path) -> Expr
+
+Build the module-level function for one block. A block body takes the same
+`(out, ctx, blocks)` arguments as a body function, so `super()` and nested blocks
+dispatch uniformly.
+"""
 function _block_function(b, bindings, unit::CompilationUnit, virtual_path::String)
     vars = context_vars(b.body, unit.mod, Set{Symbol}(first.(bindings)), unit.helpers)
     prologue = _prologue(bindings, vars, virtual_path, unit.cfg.undefined)
@@ -259,7 +288,7 @@ end
     _macro_function(m, macro_syms, unit, virtual_path)
 
 Build the module-level function for one macro. A macro body sees its arguments,
-the template's other macros, and host-module globals; it does **not** see the
+the template's other macros, and host-module globals. It does **not** see the
 caller's context. A free variable that is none of those is a compile-time error.
 """
 function _macro_function(m::MacroInfo, bindings, unit::CompilationUnit, virtual_path::String)
@@ -296,8 +325,12 @@ function _macro_function(m::MacroInfo, bindings, unit::CompilationUnit, virtual_
     return Expr(:macrocall, Symbol("@noinline"), lnn, fn)
 end
 
-# Turn a lambda parameter spec into a parameter list for a function signature.
-# A lambda writes a default as `x = v`; a function signature wants `Expr(:kw)`.
+"""
+    _lambda_params(arg) -> Vector{Any}
+
+Turn a lambda parameter spec into a parameter list for a function signature. A
+lambda writes a default as `x = v`. A function signature wants `Expr(:kw)`.
+"""
 function _lambda_params(arg)
     params = arg isa Expr && arg.head === :tuple ? Any[arg.args...] : Any[arg]
     return Any[_function_param(p) for p in params]
@@ -317,7 +350,7 @@ end
 
 Resolve a template reference (as written inside `{% include %}` or
 `{% import %}`) against the referencing template. The virtual path stays
-package-relative; the absolute path is only used to read the file.
+package-relative. The absolute path is only used to read the file.
 """
 function _reference_paths(virtual_path::AbstractString, abs_path::AbstractString, rel::AbstractString)
     if isabspath(rel)

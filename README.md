@@ -1,19 +1,20 @@
 # Ginger.jl
 
-A Jinja-style template engine for Julia that compiles templates to Julia code
-during macro expansion. Rendering is ordinary, type-specialized Julia: no runtime
-parsing, no runtime compilation, and no modules generated at runtime.
+A Jinja-style template engine for Julia. Ginger compiles templates to Julia code
+during macro expansion, so rendering is ordinary, type-specialized Julia. There
+is no runtime parsing, no runtime compilation, and no module generated at
+runtime.
 
-This repository implements **milestone M7** from `PLAN.md`: a single-file
-pipeline with the full Julia control-flow surface, inferred context, HTML
+The syntax is inspired by
+[OteraEngine.jl](https://mommawatasu.github.io/OteraEngine.jl/dev/tutorial/) and
+Jinja2. The execution model is different, and Ginger is not a drop-in
+replacement for either.
+
+Ginger supports the full Julia control-flow surface, inferred context, HTML
 escaping with compile-time escape elision, the `DefaultHelpers` filter library,
-template composition through `{% macro %}`, `{% include %}`, `{% import %}`, and
-`{% from %}`, static template inheritance through `{% extends %}`, `{% block %}`,
-and `super()` / `super(n)`, provenance diagnostics (caret `TemplateSyntaxError`s,
-a compile-time provenance registry, `TemplateError`, and `template_backtrace`),
-and `@templates` directory discovery with precompilation-aware dependency
-tracking. The public API is frozen at 1.0. See [Status](#status) for details, and
-[`docs/`](docs) for the full documentation site.
+template composition, static template inheritance, and provenance diagnostics.
+See [`docs/`](docs) for the full documentation site and
+[`docs/src/api.md`](docs/src/api.md) for the public API.
 
 ## Example
 
@@ -44,80 +45,81 @@ Hello, {{ user }}!
 `render` builds an `IOBuffer`, calls the generated entry function, and returns a
 `String`. `render!` writes to any `IO`.
 
-## What works today
+## Features
 
-- **Lexer**: `{{ }}`, `{% %}`, and `{# #}` (nestable comments), configurable
-  delimiters, whitespace control (`{{-`, `-}}`, `+` variants, `trim_blocks`,
-  `lstrip_blocks`, and `autospace`), and quote/bracket-aware tag scanning so a
-  `}}` inside a string, char, backtick, or comment does not close the tag.
-- **Synthesis**: text becomes `print(out, "…")`, expressions become
-  `__ginger_print__(…)`, and an offset map records synthetic-source to
-  template-source positions per line. `{% for %}…{% else %}…{% endfor %}` is
-  lowered to a `let`-scoped `ran_any` flag plus a trailing `if`, because Julia
-  has no `for`/`else`.
+- **Lexer**: Ginger reads `{{ }}`, `{% %}`, and `{# #}` (nestable comments). It
+  supports configurable delimiters, whitespace control (`{{-`, `-}}`, `+`
+  variants, `trim_blocks`, `lstrip_blocks`, and `autospace`), and
+  quote/bracket-aware tag scanning. A `}}` inside a string, char, backtick, or
+  comment does not close the tag.
+- **Synthesis**: Text becomes `print(out, "…")`, and expressions become
+  `__ginger_print__(…)`. An offset map records synthetic-source to
+  template-source positions per line. `{% for %}…{% else %}…{% endfor %}` lowers
+  to a `let`-scoped `ran_any` flag plus a trailing `if`, because Julia has no
+  `for`/`else`.
 - **Parsing**: `Base.JuliaSyntax.parseall` parses the synthetic source with the
-  virtual template path as the filename. Syntax errors are translated through the
-  offset map into `TemplateSyntaxError` at a template position.
+  virtual template path as the filename. Ginger translates syntax errors through
+  the offset map into a `TemplateSyntaxError` at a template position.
 - **Normalization**: `__ginger_print__` expands to `print(out, escape(e))` (or
-  without `escape` when autoescaping is off) and synthetic line numbers are
-  rewritten to real template line numbers.
-- **Inferred context**: free variables are classified into locals, host-module
-  globals, and context variables. Locals from assignments, `let`, `for`, `while`,
-  comprehensions, and function/lambda parameters are not context. The generated
-  prologue binds context variables from the render context with the configured
-  `undefined` mode (`:strict`, `:lenient`, or `:default`).
-- **Escaping**: `HTMLString`, `escape` (idempotent), `safe`, and `default`.
-  When the outermost expression is statically known to produce an `HTMLString`
-  (a `safe`/`escape`/`HTMLString` call, `super()`, or a template macro), the
-  autoescape wrapper is elided at compile time. The output is unchanged.
-- **Helpers and filters**: any function in the host module is callable from a
-template, and `Ginger.DefaultHelpers` provides `upper`, `lower`, `title`,
-`capitalize`, `trim`, `excerpt`, `truncate_at`, `replace_with`, `join_with`,
-`starts_with`, and `default_to`. Filters use ordinary Julia pipe semantics.
+  without `escape` when autoescaping is off), and Ginger rewrites synthetic line
+  numbers to real template line numbers.
+- **Inferred context**: Ginger classifies free variables into locals,
+  host-module globals, and context variables. Locals from assignments, `let`,
+  `for`, `while`, comprehensions, and function/lambda parameters are not context.
+  The generated prologue binds context variables from the render context with
+  the configured `undefined` mode (`:strict`, `:lenient`, or `:default`).
+- **Escaping**: `HTMLString`, `escape` (idempotent), `safe`, and `default`. When
+  the outermost expression is statically known to produce an `HTMLString` (a
+  `safe`/`escape`/`HTMLString` call, `super()`, or a template macro), Ginger
+  elides the autoescape wrapper at compile time. The output does not change.
+- **Helpers and filters**: Any function in the host module is callable from a
+  template. `Ginger.DefaultHelpers` supplies `upper`, `lower`, `title`,
+  `capitalize`, `trim`, `excerpt`, `truncate_at`, `replace_with`, `join_with`,
+  `starts_with`, and `default_to`. Filters use ordinary Julia pipe semantics.
 - **Control flow**: `{% %}` statements contain arbitrary Julia, so `if` /
-  `elseif` / `else`, `for`, `while`, `let`, `begin`, `try` / `catch` / `finally`,
-  `function`, `do` blocks, and `quote` all work when closed with `{% end %}`.
-  The `end*` aliases `endif`, `endfor`, `endwhile`, and `endlet` translate to
-  `end`. `{% for x in it %}…{% else %}…{% endfor %}` runs the `else` body only
-  when the iterator produced nothing.
+  `elseif` / `else`, `for`, `while`, `let`, `begin`, `try` / `catch` /
+  `finally`, `function`, `do` blocks, and `quote` all work when closed with
+  `{% end %}`. The `end*` aliases `endif`, `endfor`, `endwhile`, and `endlet`
+  translate to `end`. `{% for x in it %}…{% else %}…{% endfor %}` runs the
+  `else` body only when the iterator produces nothing.
 - **Composition**: `{% macro name(args) %}…{% endmacro %}` defines a reusable
-  fragment as a generated function returning `HTMLString`; `{% include
-  "partial.html" %}` renders another template in place, with `with k = v`
-  adding bindings to the current context; `{% import "forms.html" as forms %}`
-  and `{% from "forms.html" import field, label as lbl %}` expose another
-  template's macros as a `NamedTuple` namespace. References are relative to the
-  referencing template, compiled into the same expansion, and resolved at
-  macro-expansion time; a missing reference or a reference cycle is a
-  `TemplateSyntaxError`.
+  fragment as a generated function that returns `HTMLString`. `{% include
+  "partial.html" %}` renders another template in place, and `with k = v` adds
+  bindings to the current context. `{% import "forms.html" as forms %}` and
+  `{% from "forms.html" import field, label as lbl %}` expose another template's
+  macros as a `NamedTuple` namespace. Ginger resolves references relative to the
+  referencing template and compiles them into the same expansion. A missing
+  reference or a reference cycle is a `TemplateSyntaxError`.
 - **Inheritance**: `{% extends "base.html" %}` composes a base template with the
   child's `{% block name %}…{% endblock %}` overrides. Composition is static: a
   block is a generated function, dispatch is a `NamedTuple` lookup that
   constant-folds, and `super()` / `super(n)` resolve at compile time to the
   nearest ancestor definitions. Nested blocks and multi-level inheritance work,
   and a child's macros and imports are visible inside its blocks.
-- **Raw**: `{% raw %}…{% endraw %}` emits its body verbatim; delimiters inside
-  it are never interpreted. Explicit `-` markers on the two tags trim the body
-  edges, and the `trim_blocks`/`lstrip_blocks` config never touches raw text.
-- **Diagnostics**: unclosed template blocks (`{% for %}`, `{% if %}`, …) and an
-  unterminated `{% raw %}` are reported as `TemplateSyntaxError` at the opening
-  tag. Julia syntax errors in a tag are translated through the offset map to the
-  template line and rendered as a caret diagnostic against the template source.
-  Generated `LineNumberNode`s carry the virtual template path, so runtime
-  backtraces point at `templates/index.html:42`, and render errors are wrapped in
-  a `TemplateError` whose provenance chain is available through
+- **Raw**: `{% raw %}…{% endraw %}` emits its body verbatim, and Ginger never
+  interprets delimiters inside it. Explicit `-` markers on the two tags trim the
+  body edges, and the `trim_blocks`/`lstrip_blocks` config never touches raw
+  text.
+- **Diagnostics**: Ginger reports unclosed template blocks (`{% for %}`,
+  `{% if %}`, …) and an unterminated `{% raw %}` as a `TemplateSyntaxError` at
+  the opening tag. It translates Julia syntax errors in a tag through the offset
+  map to the template line and renders a caret diagnostic against the template
+  source. Generated `LineNumberNode`s carry the virtual template path, so runtime
+  backtraces point at `templates/index.html:42`. Ginger wraps render errors in a
+  `TemplateError` whose provenance chain is available through
   `template_backtrace`. See [Errors](#errors).
 - **Macro**: `@template "path" [as NAME] [config = Config(...)]` compiles one
-  file, `@templates "dir" [as NAME] [config = ...] [helpers = (Mod, …)]`
-  compiles every template under a directory, and `ginger"…"` compiles an inline
-  string literal. All three compile at expansion time; the file-based forms use
-  `include_dependency` so template edits invalidate the host package. See
+  file. `@templates "dir" [as NAME] [config = ...] [helpers = (Mod, …)]`
+  compiles every template under a directory. `ginger"…"` compiles an inline
+  string literal. All three compile at expansion time, and the file-based forms
+  use `include_dependency` so template edits invalidate the host package. See
   [Templates and precompilation](#templates-and-precompilation).
 
 ## Helpers and filters
 
-Any function defined or imported in the host module is callable from a template.
-The scope pass recognizes it as a host global, so no registry and no declaration
-are needed:
+Any function that is defined or imported in the host module is callable from a
+template. The scope pass treats it as a host global, so no registry and no
+declaration are necessary:
 
 ```julia
 module MyApp
@@ -136,7 +138,7 @@ Alternatively, `@templates` accepts `helpers = (MyFilters,)` and emits
 are available without a separate `using` at the call site. See
 [Templates and precompilation](#templates-and-precompilation).
 
-`Ginger.DefaultHelpers` provides these helpers:
+`Ginger.DefaultHelpers` supplies these helpers:
 
 | Helper | Form |
 |--------|------|
@@ -160,7 +162,7 @@ semantics, so `Base.Fix1` and `Base.Fix2` work as filters too:
 ```
 
 `escape` is idempotent on `HTMLString`, so `{{ x |> safe }}`, `{{ safe(x) }}`,
-and `{{ x |> escape }}` never double-escape. `safe` bypasses autoescaping;
+and `{{ x |> escape }}` never double-escape. `safe` bypasses autoescaping, and
 ordinary filters return plain `String`s and are escaped as usual.
 
 ## Composition
@@ -174,11 +176,11 @@ Macros are reusable fragments. They compile to generated functions that build an
 ```
 
 A macro body sees its arguments, the template's other macros, and host-module
-helpers. It does **not** see the caller's context; a free variable that is not
-one of those is a compile-time error. Macro definitions must appear at the top
-level, and duplicate macro names are rejected.
+helpers. It does **not** see the caller's context, and a free variable that is
+not one of those is a compile-time error. Macro definitions must appear at the
+top level, and Ginger rejects duplicate macro names.
 
-`{% include %}` renders another template in place. The render context is passed
+`{% include %}` renders another template in place. The render context passes
 through, and `with` adds or overrides bindings:
 
 ```jinja
@@ -187,8 +189,8 @@ through, and `with` adds or overrides bindings:
 ```
 
 Only the render context crosses an include boundary. A loop variable or other
-local is not visible inside the included template unless it is passed with
-`with`.
+local is not visible inside the included template unless the caller passes it
+with `with`.
 
 `{% import %}` binds another template's macro namespace, and `{% from %}` binds
 individual macros (with `as` for a local name):
@@ -201,14 +203,15 @@ individual macros (with `as` for a local name):
 {{ lbl("Email") }} {{ field("email") }}
 ```
 
-Every reference is resolved relative to the referencing template and compiled
-into the same expansion, so a shared template is compiled once per `@template`
-expansion even when several templates in that expansion reference it.
+Ginger resolves every reference relative to the referencing template and
+compiles it into the same expansion. It compiles a shared template once per
+`@template` expansion, even when several templates in that expansion reference
+it.
 
 ## Inheritance
 
 `{% extends %}` composes templates. The child overrides named `{% block %}`
-regions of its base; non-whitespace output outside a block is a compile-time
+regions of its base, and non-whitespace output outside a block is a compile-time
 error:
 
 ```jinja
@@ -230,22 +233,23 @@ the version `n` levels up:
 ```
 
 Composition is entirely static. Each template compiles to a body function and
-one function per block; a child body passes its blocks to its parent with
-`merge`, and a block site dispatches through the resulting concrete `NamedTuple`,
-which constant-folds. `super()` is a direct call on a compile-time-known
-function, so there is no runtime block registry and no `super` object.
+one function per block. A child body passes its blocks to its parent with
+`merge`, and a block site dispatches through the resulting concrete
+`NamedTuple`, which constant-folds. `super()` is a direct call on a
+compile-time-known function, so there is no runtime block registry and no
+`super` object.
 
-Restrictions are checked at macro-expansion time: `{% extends %}` must appear
+Ginger checks restrictions at macro-expansion time. `{% extends %}` must appear
 once at the top level, `{% block %}` may not appear under control flow, block
 and macro names must be unique within a template, and an extending template may
-not emit text outside a block (whitespace between tags is ignored).
+not emit text outside a block (Ginger ignores whitespace between tags).
 
 ## Errors
 
 Ginger reports two kinds of problems: compile-time template errors and
 render-time provenance.
 
-A template that cannot be lexed, parsed, or normalized raises
+A template that Ginger cannot lex, parse, or normalize raises
 `TemplateSyntaxError`. When the offending template text is available, the error
 renders the line with a caret:
 
@@ -258,13 +262,13 @@ TemplateSyntaxError: unexpected `)`
 ```
 
 The line and caret come from the synthetic-to-template offset map, which records
-one position per emitted chunk: the diagnostic points at the template line where
+one position per emitted chunk. The diagnostic points at the template line where
 the offending chunk starts, with the caret column clamped to that line.
 
-At render time, an exception raised inside a generated body, block, or macro is
-wrapped in `TemplateError`. The wrapper carries the provenance chain, recovered
-from the native backtrace through the compile-time registry that `@template`
-emits:
+At render time, Ginger wraps an exception raised inside a generated body, block,
+or macro in `TemplateError`. The wrapper carries the provenance chain, which
+Ginger recovers from the native backtrace through the compile-time registry that
+`@template` emits:
 
 ```
 TemplateError: MissingContextVariable: context variable `user` was not passed
@@ -303,12 +307,12 @@ render(TPL.partials.head)                  # views/partials/head.html
 ```
 
 All references (`{% extends %}`, `{% include %}`, `{% import %}`, `{% from %}`)
-resolve inside the set, and a template referenced from several places is
-compiled once. `{% extends %}` parents are compiled before their children, so
+resolve inside the set, and Ginger compiles a template referenced from several
+places once. Ginger compiles `{% extends %}` parents before their children, so
 the generated definitions are always in dependency order.
 
 `helpers = (MyHelpers, MyFilters)` emits `using MyHelpers, MyFilters` into the
-host module before the templates are compiled, so the exported functions and
+host module before Ginger compiles the templates, so the exported functions and
 macros of those modules are available in every template. The entries must name
 modules, not values:
 
@@ -316,8 +320,8 @@ modules, not values:
 @templates "views" helpers = (MyFilters,)
 ```
 
-A file is discovered whatever its extension, and hidden entries (a leading `.`)
-are skipped. Two files whose stems map to the same key, or a file that collides
+Ginger discovers a file whatever its extension, and skips hidden entries (a
+leading `.`). Two files whose stems map to the same key, or a file that collides
 with a subdirectory name, is a compile-time `ArgumentError`.
 
 ### Precompilation and the dev loop
@@ -331,8 +335,8 @@ The dependency registration also drives the development loop. Editing a template
 changes the package's precompile key, so the next `using MyApp` recompiles it.
 Adding a template changes the recorded directory contents, so a new file is
 discovered and bound on the next load. Removing a template invalidates the
-package as well. There is no cache, no file watcher, and no hashing in Ginger;
-the standard Julia dev loop (a reload, or `Revise.jl`) re-expands the macros.
+package as well. There is no cache, no file watcher, and no hashing in Ginger,
+and the standard Julia dev loop (a reload, or `Revise.jl`) re-expands the macros.
 
 Because the whole set is compiled in one expansion, a template that is only used
 internally (a partial, a macro library) still becomes a key in the `NamedTuple`.
@@ -367,27 +371,14 @@ macro call. Because the source is part of the host package's AST, an inline
 template is precompiled like a file-based one and needs no `include_dependency`
 entry.
 
-## Status
+## Limitations
 
-M7 completes the engine. M6 covered single-file rendering, inferred context,
-escaping, the standard helper library, template composition through macros,
-includes, and imports, static template inheritance, provenance diagnostics
-(caret `TemplateSyntaxError`s, the compile-time registry, `TemplateError`, and
-`template_backtrace`), and `@templates` directory discovery with
-precompilation-aware dependency tracking. M7 adds compile-time escape elision, a
-benchmark suite, a dev-only differential comparison against OteraEngine, a full
-Documenter documentation site, and the 1.0 public-API freeze.
-
-Everything described in this README is implemented. The package version is
-`1.0.0`; the public API is listed in [`docs/src/api.md`](docs/src/api.md) and is
-frozen. Anything named `__ginger_*` is internal.
-
-Known limitation: cross-package `{% extends %}` is not supported. All template
-references resolve inside one `@templates` expansion.
+Cross-package `{% extends %}` is not supported. All template references resolve
+inside one `@templates` expansion.
 
 ### Context inference caveat
 
-A name that is already defined in the host module is treated as a host global,
+Ginger treats a name that is already defined in the host module as a host global,
 not as a context variable. This is how helper functions work without a registry,
 but it also means that a context variable named after a `Base` export (for
 example `count`, `name`, or `missing`) resolves to the global instead. Give such
@@ -404,7 +395,7 @@ values a different render keyword.
 )
 ```
 
-`Config` is an immutable value; there is no TOML file and no mutable environment.
+`Config` is an immutable value. There is no TOML file and no mutable environment.
 The `config` expression is evaluated in the host module at macro-expansion time.
 
 ## Tests
@@ -418,7 +409,8 @@ precompiles it in a scratch environment, then checks in separate processes that 
 second load does not recompile and that editing or adding a template does. That
 check is why the suite takes a minute longer than the unit tests.
 
-Source and tests are formatted with [Runic](https://github.com/fredrikekre/Runic.jl).
+Ginger formats source and tests with
+[Runic](https://github.com/fredrikekre/Runic.jl).
 
 ## Benchmarks, differential tests, and docs
 
@@ -438,5 +430,5 @@ julia --project=docs -e 'using Pkg; Pkg.instantiate()'
 julia --project=docs docs/make.jl
 ```
 
-All three use a `[sources]` entry pointing Ginger at the checkout, so no manual
-`Pkg.develop` is needed.
+All three use a `[sources]` entry that points Ginger at the checkout, so no
+manual `Pkg.develop` is necessary.

@@ -2,18 +2,17 @@
     Ginger
 
 A Jinja-style template engine that compiles templates to Julia code during
-macro expansion. Rendering is plain, type-specialized Julia: there is no runtime
-parsing, no runtime compilation, and no generated modules at runtime.
+macro expansion. Rendering is plain, type-specialized Julia. There is no runtime
+parsing, no runtime compilation, and no generated module at runtime.
 
-See `PLAN.md` for the full design. The current implementation covers milestone
-M7: single-file rendering with the full Julia control-flow surface, inferred
-context, HTML escaping with compile-time escape elision, the `DefaultHelpers`
-filter library, template composition through `{% macro %}`, `{% include %}`,
-`{% import %}`, and `{% from %}`, static inheritance through `{% extends %}`,
-`{% block %}`, and `super()` / `super(n)`, provenance diagnostics (caret
-`TemplateSyntaxError`s, a compile-time provenance registry, `TemplateError`, and
-`template_backtrace`), and `@templates` directory discovery with
-precompilation-aware dependency tracking. The public API is frozen at 1.0.
+The engine supports the full Julia control-flow surface, inferred context, HTML
+escaping with compile-time escape elision, the `DefaultHelpers` filter library,
+template composition through `{% macro %}`, `{% include %}`, `{% import %}`, and
+`{% from %}`, static inheritance through `{% extends %}`, `{% block %}`, and
+`super()` / `super(n)`, provenance diagnostics (caret `TemplateSyntaxError`s, a
+compile-time provenance registry, `TemplateError`, and `template_backtrace`),
+and `@templates` directory discovery with precompilation-aware dependency
+tracking.
 """
 module Ginger
 

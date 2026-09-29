@@ -1,8 +1,8 @@
 # API reference
 
-Ginger's public API is frozen at 1.0. Anything named `__ginger_*` is internal and
-may change without notice, as are the fields and constructors of the types listed
-here unless a docstring says otherwise.
+This page lists the public API. Anything named `__ginger_*` is internal and may
+change without notice. The same applies to the fields and constructors of the
+types listed here unless a docstring says otherwise.
 
 ## Macros
 

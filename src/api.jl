@@ -37,8 +37,14 @@ end
 (template::Template)(io::IO; kwargs...) = render!(io, template; kwargs...)
 (template::Template)(; kwargs...) = render(template; kwargs...)
 
-# Called from inside a `catch`: `catch_backtrace()` and `rethrow()` refer to the
-# exception being handled. An error with no template frame is not ours to wrap.
+"""
+    _throw_template_error(template, err)
+
+Wrap `err` in a `TemplateError` with the recovered provenance chain. This
+function runs inside a `catch`, so `catch_backtrace()` and `rethrow()` refer to
+the exception being handled. An error with no template frame is not ours to
+wrap.
+"""
 function _throw_template_error(template::Template, err)
     err isa TemplateError && rethrow()
     chain = _template_chain(template, catch_backtrace())
@@ -68,9 +74,13 @@ function template_backtrace()
     return TemplateFrame[]
 end
 
-# Recover the provenance chain from a native backtrace. Generated functions are
-# registered in the compilation unit's `sources` under their own names, which is
-# what `StackFrame.func` reports for them.
+"""
+    _template_chain(template, bt) -> Vector{TemplateFrame}
+
+Recover the provenance chain from a native backtrace. Generated functions are
+registered in the compilation unit's `sources` under their own names, which is
+what `StackFrame.func` reports for them.
+"""
 function _template_chain(template::Template, bt)
     frames = stacktrace(bt)
     chain = TemplateFrame[]

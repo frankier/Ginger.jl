@@ -27,8 +27,13 @@ function context_vars(body, mod::Module, extra::Set{Symbol} = Set{Symbol}(), hel
     return sort!(collect(free))
 end
 
-# A helper name is a host global only when the helper module exports it, because
-# `using` imports exported names only.
+"""
+    _helper_global(helpers, name) -> Bool
+
+Return `true` when a helper module exports `name`. A helper name is a host
+global only when the helper module exports it, because `using` imports exported
+names only.
+"""
 _helper_global(helpers::Vector{Module}, name::Symbol) =
     any(m -> Base.isexported(m, name) && isdefined(m, name), helpers)
 
@@ -221,7 +226,11 @@ function _free_for!(out::Set{Symbol}, e, bound::Set{Symbol})
     return nothing
 end
 
-# Bindings in a `let` header or a `for` iteration spec.
+"""
+    _binding_pairs(spec) -> Vector{Tuple{Any,Any}}
+
+Return the `(name, value)` bindings in a `let` header or a `for` iteration spec.
+"""
 function _binding_pairs(spec)
     pairs = Tuple{Any, Any}[]
     if spec isa Expr

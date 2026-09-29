@@ -104,7 +104,7 @@ truncate_at(n::Integer) = Base.Fix2(first, n)
     replace_with(from, to = "")
 
 Return a filter that replaces each occurrence of `from` with `to`. `from` and
-`to` are passed to `Base.replace`, so they may be strings, characters, or
+`to` are passed to `Base.replace`, so they can be strings, characters, or
 regexes.
 
 ```jinja

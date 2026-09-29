@@ -4,9 +4,9 @@
 Compile the template at `path` during macro expansion and bind a `Template` value
 to `NAME` (default: the uppercased file stem) in the host module.
 
-The file is read at expansion time; `Base.include_dependency` registers it so
+The file is read at expansion time. `Base.include_dependency` registers it, so
 editing the template invalidates the host package. `path` must be a string
-literal; a relative path is resolved against the directory of the file that
+literal. A relative path is resolved against the directory of the file that
 contains the macro call.
 
 ```julia
@@ -55,9 +55,13 @@ macro ginger_str(s)
     return esc(Expr(:block, unit.defs..., registry_def, _template_value_expr(unit, compiled)))
 end
 
-# Compile a source string that is not backed by a file. Shares the pipeline with
-# file-based templates; only the dependency registration and error-source
-# attachment differ.
+"""
+    _compile_inline!(unit, virtual_path, abs_path, src)
+
+Compile a source string that is not backed by a file. This function shares the
+pipeline with file-based templates. Only the dependency registration and the
+error-source attachment differ.
+"""
 function _compile_inline!(unit::CompilationUnit, virtual_path::String, abs_path::String, src::String)
     try
         return _compile_source!(unit, virtual_path, abs_path, src)
@@ -139,8 +143,12 @@ function _parse_templates_args(args)
     return path, name, cfg_expr, helpers_expr
 end
 
-# `helpers = (A, B)` or `helpers = A` becomes `using A, B`. Each entry must be a
-# module name (a bare symbol or a dotted path), not a value.
+"""
+    _helpers_using_expr(helpers_expr) -> Union{Expr,Nothing}
+
+Turn `helpers = (A, B)` or `helpers = A` into `using A, B`. Each entry must be a
+module name (a bare symbol or a dotted path), not a value.
+"""
 function _helpers_using_expr(helpers_expr)
     helpers_expr === nothing && return nothing
     mods = helpers_expr isa Expr && helpers_expr.head === :tuple ? helpers_expr.args : Any[helpers_expr]
@@ -154,15 +162,23 @@ function _using_item(m)
     throw(ArgumentError("`helpers` entries must be module names, got $(repr(m))"))
 end
 
-# A dotted expression (`Main.Helpers`) carries `QuoteNode` field names, but a
-# `using` path wants plain symbols, so strip the quotes.
+"""
+    _using_path(e) -> Expr
+
+A dotted expression (`Main.Helpers`) carries `QuoteNode` field names, but a
+`using` path wants plain symbols. Strip the quotes.
+"""
 function _using_path(e::Expr)
     args = Any[a isa QuoteNode && a.value isa Symbol ? a.value : a for a in e.args]
     return Expr(:., args...)
 end
 
-# Evaluate the `helpers` expression to the modules themselves, for the scope
-# pass. The expression must name modules, not arbitrary values.
+"""
+    _helper_modules(mod, helpers_expr) -> Vector{Module}
+
+Evaluate the `helpers` expression to the modules themselves, for the scope pass.
+The expression must name modules, not arbitrary values.
+"""
 function _helper_modules(mod::Module, helpers_expr)
     value = Core.eval(mod, helpers_expr)
     entries = value isa Tuple ? value : (value,)
@@ -218,8 +234,12 @@ function _compile_template(virtual_path::AbstractString, abs_path::AbstractStrin
     return Expr(:block, unit.defs..., registry_def, const_def)
 end
 
-# Emit the provenance registry as a typed `Dict` literal. Sorted by generated
-# function name so macro expansion is deterministic.
+"""
+    _sources_expr(sources) -> Expr
+
+Emit the provenance registry as a typed `Dict` literal, sorted by generated
+function name so macro expansion is deterministic.
+"""
 function _sources_expr(sources::Dict{Symbol, SourceInfo})
     dict_type = Expr(:curly, GlobalRef(Base, :Dict), GlobalRef(Base, :Symbol), GlobalRef(Ginger, :SourceInfo))
     pairs = Any[

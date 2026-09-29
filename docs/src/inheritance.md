@@ -1,15 +1,15 @@
 # Composition and inheritance
 
-All template references—`extends`, `include`, `import`, `from`—resolve inside the
-enclosing `@template` / `@templates` unit and are compiled into the same
-expansion. A template referenced from several places is compiled once, and a
-reference cycle is a compile-time error.
+Ginger resolves all template references—`extends`, `include`, `import`,
+`from`—inside the enclosing `@template` / `@templates` unit and compiles them
+into the same expansion. Ginger compiles a template that several places
+reference only once, and a reference cycle is a compile-time error.
 
 ## Macros
 
-A macro is a reusable fragment compiled to a generated function that builds an
-`IOBuffer` and returns an [`HTMLString`](@ref), so a macro result is not escaped
-twice:
+A macro is a reusable fragment that compiles to a generated function. The
+function builds an `IOBuffer` and returns an [`HTMLString`](@ref), so a macro
+result is not escaped twice:
 
 ```jinja
 {% macro badge(text, kind = "info") %}<span class="{{ kind }}">{{ text }}</span>{% endmacro %}
@@ -17,9 +17,9 @@ twice:
 ```
 
 A macro body sees its arguments, the template's other macros, and host-module
-helpers. It does **not** see the caller's context; a free variable that is not one
-of those is a compile-time error. Macro definitions must appear at the top level,
-and duplicate macro names are rejected.
+helpers. It does **not** see the caller's context, and a free variable that is
+not one of those is a compile-time error. Macro definitions must appear at the
+top level, and Ginger rejects duplicate macro names.
 
 ## Includes
 
@@ -32,9 +32,9 @@ through, and `with` adds or overrides bindings:
 ```
 
 Only the render context crosses an include boundary. A loop variable or other
-local is not visible inside the included template unless it is passed with
-`with`. The included template gets a fresh block namespace, so its own blocks
-resolve to its own defaults.
+local is not visible inside the included template unless the caller passes it
+with `with`. The included template gets a fresh block namespace, so its own
+blocks resolve to its own defaults.
 
 ## Imports
 
@@ -52,7 +52,7 @@ individual macros:
 ## Inheritance
 
 `{% extends %}` composes a child template with a base. The child overrides named
-`{% block %}` regions; output outside a block is a compile-time error:
+`{% block %}` regions, and output outside a block is a compile-time error:
 
 ```jinja
 {# base.html #}
@@ -94,7 +94,7 @@ on a compile-time-known function, so there is no runtime block registry and no
 
 ## Restrictions
 
-These are checked at macro-expansion time:
+Ginger checks these restrictions at macro-expansion time:
 
 - `{% extends %}` must appear once, at the top level.
 - `{% block %}` may not appear under control flow. Nested blocks directly inside
@@ -106,8 +106,7 @@ These are checked at macro-expansion time:
 
 ## Cross-package `extends`
 
-All template references resolve within one `@templates` unit. Cross-package
-`extends` is not supported in 1.0. If several packages need to share a base
+All template references resolve within one `@templates` unit. Ginger does not
+support cross-package `extends`. If several packages need to share a base
 template, keep the base in one unit and re-export the compiled `Template`, or
-copy the base into the consuming package's unit. This is a documented
-limitation.
+copy the base into the consuming package's unit.

@@ -19,13 +19,13 @@ excerpt(n)     = s -> length(s) <= n ? s : first(s, n) * "…"
 truncate_at(n) = Base.Fix2(first, n)
 ```
 
-A bare `|` is not reinterpreted; it remains Julia's `bitor`.
+Ginger does not reinterpret a bare `|`. It remains Julia's `bitor`.
 
 ## Autoescaping
 
-Every `{{ }}` is emitted as `escape(expr)`. `escape` is idempotent on
+Ginger emits every `{{ }}` as `escape(expr)`. `escape` is idempotent on
 [`HTMLString`](@ref), so `{{ x |> safe }}` and `{{ safe(x) }}` pass through
-unchanged. `{{ x |> escape }}` is escaped once, not twice.
+unchanged. Ginger escapes `{{ x |> escape }}` once, not twice.
 
 When the outermost expression is statically known to produce an `HTMLString`—a
 call to `safe`, `escape`, `HTMLString`, `super()`, or a template macro—Ginger
@@ -64,14 +64,14 @@ using Ginger.DefaultHelpers
 {{ path |> starts_with("/admin") }}
 ```
 
-`escape`, `safe`, `HTMLString`, and `default` are re-exported from Ginger.
-Generated code references `escape` fully qualified, so autoescaping works even
-without the import.
+Ginger re-exports `escape`, `safe`, `HTMLString`, and `default`. Generated code
+references `escape` fully qualified, so autoescaping works even without the
+import.
 
 ## Custom helpers
 
-Any function defined or imported in the host module is callable from a template,
-with no registry and no declaration:
+Any function that the host module defines or imports is callable from a
+template, with no registry and no declaration:
 
 ```julia
 module MyApp

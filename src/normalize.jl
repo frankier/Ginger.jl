@@ -87,9 +87,14 @@ function normalize(parsed::Expr, syn::Synthesis, virtual_path::AbstractString, c
     return Normalized(stmts, state.macros, state.blocks, state.imports, state.parent)
 end
 
-# `{% extends %}` must be handled before blocks are expanded, because `super()`
-# resolves against the parent's block functions at expansion time. It is a
-# top-level marker, so a pre-pass over the parsed statements is enough.
+"""
+    _extract_extends!(st, parsed) -> Expr
+
+Extract `{% extends %}` and compile the parent template. This step runs before
+block expansion, because `super()` resolves against the parent's block functions
+at expansion time. The marker is a top-level statement, so a pre-pass over the
+parsed statements is sufficient.
+"""
 function _extract_extends!(st::NormalizeState, parsed::Expr)
     parsed.head === :toplevel || return parsed
     out = Any[]
@@ -100,7 +105,7 @@ function _extract_extends!(st::NormalizeState, parsed::Expr)
             push!(out, a)
         elseif a isa Expr && a.head === :call && a.args[1] === :__ginger_extends__
             found && throw(
-                TemplateSyntaxError("`{% extends %}` may appear at most once", _marker_pos(st)),
+                TemplateSyntaxError("`{% extends %}` can appear at most once", _marker_pos(st)),
             )
             length(a.args) == 2 && a.args[2] isa String || throw(
                 TemplateSyntaxError("`{% extends %}` path must be a string literal", _marker_pos(st)),
@@ -114,13 +119,18 @@ function _extract_extends!(st::NormalizeState, parsed::Expr)
     return Expr(:toplevel, out...)
 end
 
-# Heads that put a `{% block %}` under control flow. Synthesis already rejects
-# the common cases; this walk is the backstop for a control-flow keyword that
-# appears mid-statement rather than as the leading keyword.
+# Expression heads that put a `{% block %}` under control flow.
 const _CONTROL_HEADS = Set{Symbol}(
     [:if, :for, :while, :let, :try, :function, :(->), :do, :comprehension, :generator, :filter]
 )
 
+"""
+    _check_block_placement!(st, x)
+
+Reject a `{% block %}` that appears under control flow. Synthesis rejects the
+common cases. This walk is the backstop for a control-flow keyword that appears
+mid-statement rather than as the leading keyword.
+"""
 function _check_block_placement!(st::NormalizeState, x)
     _walk_block_placement(st, x, false)
     return nothing
@@ -134,7 +144,7 @@ function _walk_block_placement(st::NormalizeState, x, in_control::Bool)
     x isa Expr || return nothing
     if _is_block_marker(x)
         in_control && throw(
-            TemplateSyntaxError("`{% block %}` may not appear under control flow", _marker_pos(st)),
+            TemplateSyntaxError("`{% block %}` must not appear under control flow", _marker_pos(st)),
         )
         # A block body is `InBlock`: nested blocks directly inside it are allowed.
         # Recurse into the lambda body, not the `->` wrapper, which would itself
@@ -168,9 +178,13 @@ function _expand_node(x, st::NormalizeState)
     return x
 end
 
-# A `{% block name %}` is emitted as `__ginger_block__(:name) do … end`. The
-# lambda body becomes a generated module-level function and the call site becomes
-# a static block dispatch.
+"""
+    _expand_do(x, st) -> Expr
+
+Expand a `{% block name %}`. Synthesis emits the block as
+`__ginger_block__(:name) do … end`. The lambda body becomes a generated
+module-level function, and the call site becomes a static block dispatch.
+"""
 function _expand_do(x::Expr, st::NormalizeState)
     _is_block_marker(x) && return _expand_block(x, st)
     return x
@@ -285,9 +299,13 @@ function _expand_fromimport(x::Expr, st::NormalizeState)
     return Expr(:block)
 end
 
-# `super()` / `super(n)` become a placeholder resolved once the enclosing block is
-# expanded. The placeholder carries its template position so an out-of-block
-# `super()` can be reported precisely.
+"""
+    _expand_super(x, st) -> Expr
+
+Expand `super()` / `super(n)` to a placeholder. The enclosing block expansion
+resolves the placeholder. It carries its template position, so an out-of-block
+`super()` gets a precise report.
+"""
 function _expand_super(x::Expr, st::NormalizeState)
     if length(x.args) == 1
         n = 1
@@ -299,9 +317,13 @@ function _expand_super(x::Expr, st::NormalizeState)
     return Expr(:call, :__ginger_super__, n, QuoteNode(_marker_pos(st)))
 end
 
-# Resolve `__ginger_super__` markers in a block body to static calls on the
-# nearest ancestor definitions of the block. `super()` is the nearest ancestor,
-# `super(2)` the one above it, and so on.
+"""
+    _resolve_super(body, name, st)
+
+Resolve `__ginger_super__` markers in a block body to static calls on the nearest
+ancestor definitions of the block. `super()` is the nearest ancestor, `super(2)`
+the one above it, and so on.
+"""
 function _resolve_super(body, name::Symbol, st::NormalizeState)
     chain = _ancestor_block_syms(st.parent, name)
     return MacroTools.postwalk(body) do e
@@ -330,10 +352,14 @@ end
 # `_collect_safe_names!`.
 const _SAFE_HELPER_NAMES = Set{Symbol}([:safe, :escape, :HTMLString])
 
-# Collect the names that are statically known to produce `HTMLString`: this
-# template's macros, an `{% import %}` namespace, and `{% from %}`-imported macro
-# names. The pass runs before marker expansion because `postwalk` is bottom-up
-# and a `{{ macro() }}` may textually precede the macro definition.
+"""
+    _collect_safe_names!(st, parsed)
+
+Collect the names that are statically known to produce `HTMLString`: this
+template's macros, an `{% import %}` namespace, and `{% from %}`-imported macro
+names. The pass runs before marker expansion because `postwalk` is bottom-up and
+a `{{ macro() }}` may textually precede the macro definition.
+"""
 function _collect_safe_names!(st::NormalizeState, parsed::Expr)
     parsed.head === :toplevel || return nothing
     for a in parsed.args
@@ -354,9 +380,13 @@ function _collect_safe_names!(st::NormalizeState, parsed::Expr)
     return nothing
 end
 
-# True when `e` is a call whose result is guaranteed to be an `HTMLString`, so
-# wrapping it in `escape` is a no-op. Escape is idempotent, so eliding the
-# wrapper never changes the rendered output.
+"""
+    _statically_safe(e, st) -> Bool
+
+Return `true` when `e` is a call whose result is guaranteed to be an
+`HTMLString`, so that wrapping it in `escape` is a no-op. Escape is idempotent,
+so eliding the wrapper never changes the rendered output.
+"""
 function _statically_safe(e, st::NormalizeState)
     e isa Expr || return false
     e.head === :call || return false
@@ -401,8 +431,12 @@ function _check_duplicate_blocks(blocks::Vector{BlockInfo})
     return nothing
 end
 
-# An extending template contributes only blocks; any real output outside a block
-# is a template authoring error. Whitespace between tags is ignored.
+"""
+    _check_no_loose_text(st, stmts)
+
+Reject real output outside a block in an extending template. Such a template
+contributes only blocks. Whitespace between tags is ignored.
+"""
 function _check_no_loose_text(st::NormalizeState, stmts)
     last = nothing
     for a in stmts
@@ -449,7 +483,7 @@ function _check_no_super(e)
         end
         return x
     end
-    found && throw(TemplateSyntaxError("`super()` may only appear inside a block", pos))
+    found && throw(TemplateSyntaxError("`super()` can appear only inside a block", pos))
     return nothing
 end
 

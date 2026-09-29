@@ -128,7 +128,7 @@ __ginger_empty_block__(out, ctx, blocks) = HTMLString("")
 """
     Template
 
-A compiled template. `path` is the package-relative virtual path; `entry` is the
+A compiled template. `path` is the package-relative virtual path. `entry` is the
 generated entry function `entry(out; kwargs...)`. `sources` is the compilation
 unit's provenance registry, mapping each generated function name to its
 `SourceInfo`, and `source_root` resolves virtual paths to absolute paths

@@ -1,21 +1,22 @@
 # Ginger.jl
 
-A Jinja-style template engine for Julia that compiles templates to Julia code
-during macro expansion. Rendering is ordinary, type-specialized Julia: no runtime
-parsing, no runtime compilation, and no modules generated at runtime.
+A Jinja-style template engine for Julia. Ginger compiles templates to Julia code
+during macro expansion, so rendering is ordinary, type-specialized Julia. There
+is no runtime parsing, no runtime compilation, and no module generated at
+runtime.
 
 The syntax is inspired by
 [OteraEngine.jl](https://mommawatasu.github.io/OteraEngine.jl/dev/tutorial/) and
 Jinja2. The execution model is different, and Ginger is **not** a drop-in
-replacement for either. See [Migrating from OteraEngine](migration-from-otera.md) for the
-differences.
+replacement for either. See [Migrating from OteraEngine](migration-from-otera.md)
+for the differences.
 
 ## Why compile at macro-expansion time?
 
-A template is read once, while the host package is being compiled. Ginger turns
-it into ordinary Julia functions and splices those functions into the host
-module. The result is cached in the host package's precompile image, so there is
-no runtime loader, no cache, no `Core.eval`, and no world-age handling.
+The host package reads each template once while it compiles. Ginger turns the
+template into ordinary Julia functions and splices those functions into the host
+module. The host package's precompile image caches the result, so there is no
+runtime loader, no cache, no `Core.eval`, and no world-age handling.
 
 At render time, a template is a typed Julia function call. Context variables are
 `NamedTuple` fields, block dispatch is a `NamedTuple` lookup that constant-folds,
@@ -80,5 +81,5 @@ TPL.index(io; user = "frank")    # shorthand for render!(io, TPL.index; user = "
 | [Composition and inheritance](inheritance.md) | Macros, includes, imports, `extends`/`block`/`super` |
 | [Errors](errors.md) | Caret diagnostics, provenance chains, virtual paths |
 | [Templates and precompilation](precompilation.md) | `@template`, `@templates`, the dev loop |
-| [API reference](api.md) | The frozen 1.0 public API |
+| [API reference](api.md) | The public API |
 | [Migrating from OteraEngine](migration-from-otera.md) | Differences and a step-by-step migration |

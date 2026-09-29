@@ -1,10 +1,10 @@
 """
     parse_source(syn, virtual_path) -> Expr
 
-Parse the synthetic source with `Base.JuliaSyntax`, using the virtual path as the
-filename so that `LineNumberNode`s and `@__FILE__` already carry template paths.
-`Base.JuliaSyntax.ParseError` diagnostics are translated through the offset map
-into a `TemplateSyntaxError` at a template position.
+Parse the synthetic source with `Base.JuliaSyntax`, and give the virtual path as
+the filename, so that `LineNumberNode`s and `@__FILE__` already carry template
+paths. Ginger translates `Base.JuliaSyntax.ParseError` diagnostics through the
+offset map into a `TemplateSyntaxError` at a template position.
 """
 function parse_source(syn::Synthesis, virtual_path::AbstractString)
     try

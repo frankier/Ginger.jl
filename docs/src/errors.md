@@ -1,11 +1,11 @@
 # Errors
 
-Ginger reports two kinds of problems: compile-time template errors and render-time
-provenance.
+Ginger reports two kinds of problems: compile-time template errors and
+render-time provenance.
 
 ## Compile-time diagnostics
 
-A template that cannot be lexed, parsed, or normalized raises
+A template that Ginger cannot lex, parse, or normalize raises
 [`TemplateSyntaxError`](@ref). When the offending template text is available, the
 error renders the line with a caret:
 
@@ -28,9 +28,9 @@ reserved-prefix misuse—carry a `Pos` directly and render the same way.
 
 Every statement carries a `LineNumberNode` with the virtual template path and the
 real template line, so an uncaught exception backtraces to
-`templates/index.html:3`. The parser is given the virtual path as its filename, so
-`@__FILE__` expands to the virtual path, `@__LINE__` to the template line, and
-`@__DIR__` to the virtual directory. No source rewriting is needed.
+`templates/index.html:3`. The parser receives the virtual path as its filename,
+so `@__FILE__` expands to the virtual path, `@__LINE__` to the template line, and
+`@__DIR__` to the virtual directory. No source rewriting is necessary.
 
 Virtual paths are package-relative, never absolute build-time paths, so precompile
 images stay relocatable. [`Config.source_root`](@ref Config) resolves them to
@@ -38,9 +38,9 @@ absolute paths for display and editor jumps.
 
 ## Provenance without a frame stack
 
-`__ginger_body_*`, `__ginger_block_*`, and `__ginger_macro_*` functions are
-marked `@noinline` and registered in a compile-time provenance registry.
-`render` catches an exception, walks the native backtrace with
+Ginger marks `__ginger_body_*`, `__ginger_block_*`, and `__ginger_macro_*`
+functions as `@noinline` and registers them in a compile-time provenance
+registry. `render` catches an exception, walks the native backtrace with
 `Base.StackTraces`, and builds the chain:
 
 ```text

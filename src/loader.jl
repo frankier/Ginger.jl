@@ -33,9 +33,13 @@ end
 
 # --- directory tree ---------------------------------------------------------
 
-# A `@templates` directory becomes a nested `NamedTuple`: files are leaves and
-# subdirectories are branches. Building the tree first makes duplicate-name
-# detection and deterministic ordering straightforward.
+"""
+    _TemplateTree
+
+A `@templates` directory becomes a nested `NamedTuple`: files are leaves and
+subdirectories are branches. Building the tree first makes duplicate-name
+detection and deterministic ordering straightforward.
+"""
 mutable struct _TemplateTree
     leaves::Dict{Symbol, Any}
     dirs::Dict{Symbol, _TemplateTree}
@@ -84,8 +88,12 @@ function _template_name_components(rel::AbstractString)
     return comps
 end
 
-# Turn an arbitrary file or directory name into a usable property name. A name
-# that does not start with a letter or `_` is prefixed so `TPL.name` parses.
+"""
+    _field_symbol(s) -> Symbol
+
+Turn an arbitrary file or directory name into a usable property name. A name
+that does not start with a letter or `_` receives a prefix, so `TPL.name` parses.
+"""
 function _field_symbol(s::AbstractString)
     io = IOBuffer()
     for c in s
@@ -97,8 +105,13 @@ function _field_symbol(s::AbstractString)
     return Symbol(name)
 end
 
-# The virtual path stays package-relative, exactly as for `@template`. For an
-# absolute root, fall back to the path relative to the configured source root.
+"""
+    _templates_virtual_path(root_arg, abs_dir, abs_file, source_root) -> String
+
+Return the virtual path for one template. The path stays package-relative,
+exactly as for `@template`. For an absolute root, fall back to the path relative
+to the configured source root.
+"""
 function _templates_virtual_path(root_arg::AbstractString, abs_dir::AbstractString, abs_file::AbstractString, source_root::AbstractString)
     if isabspath(root_arg)
         rel = relpath(abs_file, source_root)

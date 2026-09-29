@@ -28,7 +28,7 @@ end
     Lexer
 
 Streaming tokenizer state. Call [`next_token!`](@ref) until it returns `nothing`.
-The token stream is consumed directly by `synthesize.jl`; no segment vector is
+The token stream is consumed directly by `synthesize.jl`. No segment vector is
 materialized.
 """
 mutable struct Lexer
@@ -119,7 +119,7 @@ end
 Scan a `{% raw %}` block. `content_start` is the index just after the opening
 tag. The body up to the matching `{% endraw %}` becomes a single `RAW` token and
 is never interpreted. Returns the token together with the index just after the
-closing tag. Explicit `-` markers on the two tags trim the body edges; the
+closing tag. Explicit `-` markers on the two tags trim the body edges. The
 `trim_blocks`/`lstrip_blocks` config deliberately does not touch raw bodies.
 """
 function _scan_raw(lx::Lexer, content_start::Int, opener::Token)
@@ -155,9 +155,13 @@ function _scan_raw(lx::Lexer, content_start::Int, opener::Token)
     return
 end
 
-# True when the tag beginning at `k` is `endraw`, allowing whitespace-control
-# flags and surrounding whitespace. Used to tell a real `{% endraw %}` apart from
-# a `{%` that is just literal raw text.
+"""
+    _looks_like_endraw(s, k, start_delim) -> Bool
+
+Return `true` when the tag that begins at `k` is `endraw`. The check allows
+whitespace-control flags and surrounding whitespace, so it tells a real
+`{% endraw %}` apart from a `{%` that is literal raw text.
+"""
 function _looks_like_endraw(s::String, k::Int, start_delim::AbstractString)
     n = ncodeunits(s)
     p = k + ncodeunits(start_delim)
@@ -303,8 +307,13 @@ function _scan_comment_body(s::String, p::Int, opener::AbstractString, closer::A
     return nothing
 end
 
-# Skip a `"`-delimited string (single or triple quoted), including `$(...)`
-# interpolations, which may themselves contain strings.
+"""
+    _skip_string(s, i) -> Int
+
+Skip a `"`-delimited string (single or triple quoted), including `\$(...)`
+interpolations, which can themselves contain strings. Return the index after
+the closing quote.
+"""
 function _skip_string(s::String, i::Int)
     n = ncodeunits(s)
     triple = _match_at(s, i, "\"\"\"")
@@ -347,8 +356,12 @@ function _skip_backtick(s::String, i::Int)
     return n + 1
 end
 
-# Skip a bracketed run. `i` must point at `(`; returns the index after the
-# matching `)`.
+"""
+    _skip_balanced(s, i) -> Int
+
+Skip a bracketed run. `i` must point at `(`. Return the index after the matching
+`)`.
+"""
 function _skip_balanced(s::String, i::Int)
     n = ncodeunits(s)
     depth = 0
@@ -377,9 +390,13 @@ function _skip_balanced(s::String, i::Int)
     return n + 1
 end
 
-# A `'` is ambiguous: `'a'` is a char literal, `A'` is adjoint. Treat it as a
-# char literal only when a plausible closing quote follows; otherwise consume it
-# as an operator.
+"""
+    _skip_char_or_adjoint(s, i) -> Int
+
+Skip a `'` that is ambiguous between a char literal and adjoint. `'a'` is a char
+literal and `A'` is adjoint. Consume a char literal only when a plausible
+closing quote follows. Otherwise consume the `'` as an operator.
+"""
 function _skip_char_or_adjoint(s::String, i::Int)
     n = ncodeunits(s)
     j = nextind(s, i)
@@ -394,8 +411,12 @@ function _skip_char_or_adjoint(s::String, i::Int)
     return closing <= n && s[closing] == '\'' ? nextind(s, closing) : nextind(s, i)
 end
 
-# Skip a line comment or a nestable `#= =#` block comment. A line comment returns
-# the index of its terminating newline (or end of input).
+"""
+    _skip_comment(s, i) -> Int
+
+Skip a line comment or a nestable `#= =#` block comment. For a line comment,
+return the index of its terminating newline (or the end of input).
+"""
 function _skip_comment(s::String, i::Int)
     n = ncodeunits(s)
     if _match_at(s, i, "#=")
